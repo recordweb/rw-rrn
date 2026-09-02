@@ -1,9 +1,24 @@
-name: Deploy to VPS
+name: Deploy RWRRN to VPS
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Docker Compose service to start (or "all")'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - ca.tws.rwrrn.recordweb.dev
+          - orderer0.tws.rwrrn.recordweb.dev
+          - orderer1.tws.rwrrn.recordweb.dev
+          - peer0.tws.rwrrn.recordweb.dev
+          - peer1.tws.rwrrn.recordweb.dev
+          - cli
+          - all
 
 jobs:
   deploy:
@@ -16,7 +31,18 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -euo pipefail
             cd /opt/rwrrn
-            git -c http.version=HTTP/1.1 pull origin main
-            docker compose up -d
+
+            git -c http.version=HTTP/1.1 fetch origin
+            git reset --hard origin/main
+            git clean -fd
+
+            SERVICE="${{ github.event.inputs.service }}"
+            if [ -z "$SERVICE" ] || [ "$SERVICE" = "all" ]; then
+              docker compose up -d
+            else
+              docker compose up -d "$SERVICE"
+            fi
+
             docker compose ps
