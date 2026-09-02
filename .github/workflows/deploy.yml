@@ -33,27 +33,35 @@ jobs:
           port: 22
           timeout: 30s
           command_timeout: 10m
-          envs: GIT_TERMINAL_PROMPT
           script: |
             set -euo pipefail
-            export GIT_TERMINAL_PROMPT=0
 
-            echo "--- DNS/network check ---"
-            getent hosts github.com || true
-            curl -sS -o /dev/null -w "HTTP %{http_code}\n" https://github.com || true
+            echo "--- known_hosts for github.com ---"
+            mkdir -p ~/.ssh
+            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
 
-            echo "--- git ls-remote debug ---"
-            GIT_CURL_VERBOSE=1 git ls-remote https://github.com/recordweb/rwrrn.git 2>&1 | tail -n 40
+            echo "--- ssh auth test against GitHub ---"
+            ssh -T git@github.com || true
 
             if [ ! -d /opt/rwrrn/.git ]; then
-              echo "Repo not found at /opt/rwrrn — cloning..."
+              echo "Repo not found at /opt/rwrrn — cloning via SSH..."
               mkdir -p /opt/rwrrn
-              git clone https://github.com/recordweb/rwrrn.git /opt/rwrrn
+              git clone git@github.com:recordweb/rwrrn.git /opt/rwrrn
             fi
 
             cd /opt/rwrrn
+            git remote set-url origin git@github.com:recordweb/rwrrn.git
             git fetch origin
             git reset --hard origin/main
             git clean -fd
 
             cd network
+
+            SERVICE="${{ github.event.inputs.service }}"
+            if [ -z "$SERVICE" ] || [ "$SERVICE" = "all" ]; then
+              docker compose up -d
+            else
+              docker compose up -d "$SERVICE"
+            fi
+
+            docker compose ps
