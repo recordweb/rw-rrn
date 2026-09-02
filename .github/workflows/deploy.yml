@@ -38,8 +38,7 @@ jobs:
 
             if [ ! -d /opt/rwrrn/.git ]; then
               echo "Repo not found at /opt/rwrrn — cloning..."
-              sudo mkdir -p /opt/rwrrn
-              sudo chown "$(whoami)":"$(whoami)" /opt/rwrrn
+              mkdir -p /opt/rwrrn
               git clone https://github.com/recordweb/rwrrn.git /opt/rwrrn
             fi
 
