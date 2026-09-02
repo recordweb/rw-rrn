@@ -33,21 +33,28 @@ jobs:
           port: 22
           timeout: 30s
           command_timeout: 10m
-          debug: true
           script: |
             set -euo pipefail
-            cd /opt/rwrrn
 
+            if [ ! -d /opt/rwrrn/.git ]; then
+              echo "Repo not found at /opt/rwrrn — cloning..."
+              sudo mkdir -p /opt/rwrrn
+              sudo chown "$(whoami)":"$(whoami)" /opt/rwrrn
+              git clone https://github.com/recordweb/rwrrn.git /opt/rwrrn
+            fi
+
+            cd /opt/rwrrn
             git fetch origin
             git reset --hard origin/main
             git clean -fd
 
             cd network
 
-            if [ "${{ github.event.inputs.service }}" = "all" ]; then
+            SERVICE="${{ github.event.inputs.service }}"
+            if [ -z "$SERVICE" ] || [ "$SERVICE" = "all" ]; then
               docker compose up -d
             else
-              docker compose up -d "${{ github.event.inputs.service }}"
+              docker compose up -d "$SERVICE"
             fi
 
             docker compose ps
