@@ -33,8 +33,17 @@ jobs:
           port: 22
           timeout: 30s
           command_timeout: 10m
+          envs: GIT_TERMINAL_PROMPT
           script: |
             set -euo pipefail
+            export GIT_TERMINAL_PROMPT=0
+
+            echo "--- DNS/network check ---"
+            getent hosts github.com || true
+            curl -sS -o /dev/null -w "HTTP %{http_code}\n" https://github.com || true
+
+            echo "--- git ls-remote debug ---"
+            GIT_CURL_VERBOSE=1 git ls-remote https://github.com/recordweb/rwrrn.git 2>&1 | tail -n 40
 
             if [ ! -d /opt/rwrrn/.git ]; then
               echo "Repo not found at /opt/rwrrn — cloning..."
@@ -48,12 +57,3 @@ jobs:
             git clean -fd
 
             cd network
-
-            SERVICE="${{ github.event.inputs.service }}"
-            if [ -z "$SERVICE" ] || [ "$SERVICE" = "all" ]; then
-              docker compose up -d
-            else
-              docker compose up -d "$SERVICE"
-            fi
-
-            docker compose ps
