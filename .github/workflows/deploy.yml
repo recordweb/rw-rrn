@@ -1,24 +1,9 @@
-name: Deploy RWRRN to VPS
+name: Deploy to VPS
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
-    inputs:
-      service:
-        description: 'Docker Compose service to start (or "all")'
-        required: true
-        default: 'ca.tws.rwrrn.recordweb.dev'
-        type: choice
-        options:
-          - ca.tws.rwrrn.recordweb.dev
-          - orderer0.tws.rwrrn.recordweb.dev
-          - orderer1.tws.rwrrn.recordweb.dev
-          - peer0.tws.rwrrn.recordweb.dev
-          - peer1.tws.rwrrn.recordweb.dev
-          - cli
-          - all
 
 jobs:
   deploy:
@@ -30,38 +15,9 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          timeout: 30s
-          command_timeout: 10m
           script: |
-            set -euo pipefail
-
-            echo "--- known_hosts for github.com ---"
-            mkdir -p ~/.ssh
-            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-
-            echo "--- ssh auth test against GitHub ---"
-            ssh -T git@github.com || true
-
-            if [ ! -d /opt/rwrrn/.git ]; then
-              echo "Repo not found at /opt/rwrrn — cloning via SSH..."
-              mkdir -p /opt/rwrrn
-              git clone git@github.com:recordweb/rwrrn.git /opt/rwrrn
-            fi
-
             cd /opt/rwrrn
-            git remote set-url origin git@github.com:recordweb/rwrrn.git
-            git fetch origin
-            git reset --hard origin/main
-            git clean -fd
-
+            git pull origin main
             cd network
-
-            SERVICE="${{ github.event.inputs.service }}"
-            if [ -z "$SERVICE" ] || [ "$SERVICE" = "all" ]; then
-              docker compose up -d
-            else
-              docker compose up -d "$SERVICE"
-            fi
-
+            docker compose up -d
             docker compose ps
