@@ -17,7 +17,6 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd /opt/rwrrn
-            git pull origin main
-            cd network
+            git -c http.version=HTTP/1.1 pull origin main
             docker compose up -d
             docker compose ps
