@@ -1,0 +1,14 @@
+# Fabric-Artefacts - generated locally
+network/crypto-config/
+network/channel-artifacts/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Libraries, package-lock, environment variables 
+node_modules/
+package-lock.json
+.env
+
