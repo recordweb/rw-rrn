@@ -4,47 +4,40 @@
 # =============================================================================
 # Step 3 of the RWRRN crypto-material bootstrap sequence.
 #
-# v4 CHANGE: extended from 2 to 4 orderers (orderer0-orderer3), required for
-# the switch to SmartBFT consensus (minimum 4 consenters for any fault
-# tolerance). Peers remain at 2 (peer0/peer1) — SmartBFT's minimum-node
-# requirement applies to ORDERERS only, not peers.
+# v5 CHANGE: switched execution context from the CA container (Option A) to
+# the dedicated rwrrn-cli tools container (Option B), per the 2026-09-03
+# decision to move all fabric-ca-client / channel-bootstrap operations into
+# one purpose-built tools image instead of running fabric-ca-client inside
+# the CA server container.
 #
-# New .env variables required (add alongside the existing ORDERER0_*/ORDERER1_*):
-#   ORDERER2_NAME=orderer2.tws.rwrrn.recordweb.dev
-#   ORDERER2_ENROLL_ID=orderer2
-#   ORDERER2_ENROLL_SECRET=<your new secret>
-#   ORDERER3_NAME=orderer3.tws.rwrrn.recordweb.dev
-#   ORDERER3_ENROLL_ID=orderer3
-#   ORDERER3_ENROLL_SECRET=<your new secret>
+# Path prefix changed from /etc/hyperledger/... (CA container mounts) to
+# /opt/gopath/src/github.com/hyperledger/fabric/peer/... (cli container
+# mounts — same host directories, different mount point inside the
+# container). No script LOGIC changed, only the base paths.
 #
-# EXECUTION CONTEXT (temporary — Option A, see note in Step 1 script):
-#   Run INSIDE the CA container (ca.tws.rwrrn.recordweb.dev).
+# Still extended for 4 orderers (orderer0-orderer3), required for SmartBFT
+# (minimum 4 consenters). Since orderer0/orderer1/peer0/peer1 already have
+# valid certificates from prior runs, this script will skip them (idempotent)
+# and only actually enroll orderer2/orderer3.
 #
-# WHAT THIS DOES:
-#   For each of orderer0, orderer1, orderer2, orderer3, peer0, peer1:
-#     1. Registers a node identity with the CA (registrar = the matching org
-#        admin: tws-orderer-admin for orderers, tws-org-admin for peers).
-#     2. Enrolls the MSP certificate (signing identity).
-#     3. Enrolls a SEPARATE TLS certificate (--enrollment.profile tls).
-#   Idempotent: orderer0/orderer1/peer0/peer1 will be skipped entirely since
-#   their certificates already exist from the previous run — only
-#   orderer2/orderer3 will actually enroll anything new.
-#
-# WHAT THIS DOES NOT DO:
-#   - Does NOT start/restart any orderer or peer container.
-#   - Does NOT create the channel / genesis block / BFT ConsenterMapping.
+# EXECUTION CONTEXT:
+#   Run INSIDE the rwrrn-cli container (built from fabric-tools/Dockerfile.tools).
 #
 # HOW TO RUN:
-#   docker compose exec ca.tws.rwrrn.recordweb.dev bash
-#   bash /etc/hyperledger/scripts/ca-bootstrap/03-register-enroll-nodes.sh
+#   docker compose exec cli bash
+#   bash scripts/ca-bootstrap/03-register-enroll-nodes.sh
+#   (cli's working_dir is already .../peer, so the relative path works)
 #
 # PREREQUISITE:
-#   Step 2 script has run successfully. .env updated with ORDERER2_*/ORDERER3_*.
+#   Step 1 and 2 already completed (bootstrap admin, tws-org-admin,
+#   tws-orderer-admin all enrolled — visible under ./crypto-config on the
+#   host, and thus also visible here via the cli container's crypto mount).
+#   .env must contain ORDERER2_*/ORDERER3_* variables.
 # =============================================================================
 
 set -euo pipefail
 
-ENV_FILE="${ENV_FILE:-/etc/hyperledger/.env}"
+ENV_FILE="${ENV_FILE:-/opt/gopath/src/github.com/hyperledger/fabric/peer/.env}"
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "ERROR: .env not found at $ENV_FILE"
   exit 1
@@ -68,10 +61,10 @@ set +a
 : "${ORDERER1_NAME:?ORDERER1_NAME not set in .env}"
 : "${ORDERER1_ENROLL_ID:?ORDERER1_ENROLL_ID not set in .env}"
 : "${ORDERER1_ENROLL_SECRET:?ORDERER1_ENROLL_SECRET not set in .env}"
-: "${ORDERER2_NAME:?ORDERER2_NAME not set in .env — add it for the BFT expansion}"
+: "${ORDERER2_NAME:?ORDERER2_NAME not set in .env}"
 : "${ORDERER2_ENROLL_ID:?ORDERER2_ENROLL_ID not set in .env}"
 : "${ORDERER2_ENROLL_SECRET:?ORDERER2_ENROLL_SECRET not set in .env}"
-: "${ORDERER3_NAME:?ORDERER3_NAME not set in .env — add it for the BFT expansion}"
+: "${ORDERER3_NAME:?ORDERER3_NAME not set in .env}"
 : "${ORDERER3_ENROLL_ID:?ORDERER3_ENROLL_ID not set in .env}"
 : "${ORDERER3_ENROLL_SECRET:?ORDERER3_ENROLL_SECRET not set in .env}"
 : "${PEER0_NAME:?PEER0_NAME not set in .env}"
@@ -81,11 +74,16 @@ set +a
 : "${PEER1_ENROLL_ID:?PEER1_ENROLL_ID not set in .env}"
 : "${PEER1_ENROLL_SECRET:?PEER1_ENROLL_SECRET not set in .env}"
 
-CRYPTO_ROOT="/etc/hyperledger/crypto-config"
-CA_TLS_CERT="/etc/hyperledger/fabric-ca-server/tls-cert.pem"
+CRYPTO_ROOT="/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto"
+CA_TLS_CERT="/opt/gopath/src/github.com/hyperledger/fabric/peer/fabric-ca/tws/tls-cert.pem"
 ORDERER_ADMIN_HOME="${CRYPTO_ROOT}/ordererOrganizations/${ORG_DOMAIN}/users/${ORDERER_ADMIN_USER}"
 ORG_ADMIN_HOME="${CRYPTO_ROOT}/peerOrganizations/${ORG_DOMAIN}/users/${ORG_ADMIN_USER}"
 
+if [[ ! -f "$CA_TLS_CERT" ]]; then
+  echo "ERROR: CA TLS cert not found at $CA_TLS_CERT"
+  echo "Check that docker-compose.yml mounts ./fabric-ca into the cli container."
+  exit 1
+fi
 if [[ ! -d "${ORDERER_ADMIN_HOME}/msp/signcerts" ]]; then
   echo "ERROR: ${ORDERER_ADMIN_USER} MSP not found at ${ORDERER_ADMIN_HOME}/msp"
   exit 1
@@ -251,5 +249,5 @@ echo "== Done =="
 echo "Orderer MSP/TLS material under: ${ORDERER_BASE}/<node>/{msp,tls}"
 echo "Peer MSP/TLS material under:    ${PEER_BASE}/<node>/{msp,tls}"
 echo ""
-echo "Next: run 04-copy-admincerts-to-nodes.sh (also extended for orderer2/3),"
-echo "then verify each new orderer starts cleanly, one at a time."
+echo "Next: run 04-copy-admincerts-to-nodes.sh, then start orderer2/orderer3"
+echo "ONE AT A TIME and check logs before starting the next one."
