@@ -4,42 +4,49 @@
 # =============================================================================
 # Step 1 of the RWRRN crypto-material bootstrap sequence.
 #
+# CURRENT EXECUTION CONTEXT (temporary — see note at bottom):
+#   Runs INSIDE the CA container (ca.tws.rwrrn.recordweb.dev), because that
+#   image (hyperledger/fabric-ca:1.5) bundles fabric-ca-client, whereas the
+#   `cli` container (hyperledger/fabric-tools:2.5) does not.
+#
+#   This is a deliberate interim choice (Option A). The project intends to
+#   switch later to Option B: a dedicated `fabric-ca-tools` service in
+#   docker-compose.yml, so the CA container stays a pure server and the CLI
+#   container stays a pure peer/orderer admin client. Do not treat the paths
+#   below as final — they will move when Option B lands.
+#
 # WHAT THIS DOES:
 #   Enrolls the Fabric CA's built-in bootstrap identity (admin:adminpw, set
 #   via `fabric-ca-server start -b admin:adminpw` in docker-compose.yml) as a
-#   Fabric CA *client* identity. This produces a local MSP folder (cert +
-#   private key) that lets us talk to the CA as an authenticated admin for
-#   all subsequent `fabric-ca-client register` calls (Step 2 onward).
+#   Fabric CA *client* identity. Produces a local MSP folder (cert + private
+#   key) used for all subsequent `fabric-ca-client register` calls (Step 2+).
 #
 # WHAT THIS DOES NOT DO:
-#   - It does NOT create the orderer/peer/org-admin identities yet (Step 2+).
-#   - It does NOT touch docker-compose.yml or restart any container.
-#   - It is idempotent: if the bootstrap admin's MSP already exists, it exits
-#     without re-enrolling (re-enrolling would silently issue a *new*
-#     certificate and is a deliberate, separate action, not a side effect of
-#     re-running this script).
+#   - Does NOT create orderer/peer/org-admin identities yet (Step 2 onward).
+#   - Does NOT touch docker-compose.yml or restart any container.
+#   - Idempotent: if the bootstrap admin's MSP already exists, exits without
+#     re-enrolling (re-enrolling deliberately requires deleting the folder
+#     first — never a silent side effect of re-running this script).
 #
 # HOW TO RUN (manually, via SSH on the VPS, NOT via the deploy workflow):
 #   cd /opt/rwrrn
-#   cp .env.template .env        # first time only, then fill in real secrets
-#   docker compose exec cli bash
-#   cd /opt/gopath/src/github.com/hyperledger/fabric/peer
-#   bash scripts/ca-bootstrap/01-enroll-bootstrap-admin.sh
+#   docker compose exec ca.tws.rwrrn.recordweb.dev bash
+#   bash /etc/hyperledger/scripts/ca-bootstrap/01-enroll-bootstrap-admin.sh
 #
 # PREREQUISITE:
-#   The .env file must exist in the repo root (mounted into cli at
-#   /opt/gopath/src/github.com/hyperledger/fabric/peer/.env via the existing
-#   `../scripts:/opt/gopath/.../scripts` bind — see note at bottom on the one
-#   extra mount you need to add).
+#   docker-compose.yml must mount, on the CA service:
+#     - ./crypto-config:/etc/hyperledger/crypto-config
+#     - ./.env:/etc/hyperledger/.env:ro
+#     - ./scripts:/etc/hyperledger/scripts:ro
 # =============================================================================
 
 set -euo pipefail
 
 # --- Load configuration ------------------------------------------------------
-ENV_FILE="${ENV_FILE:-/opt/gopath/src/github.com/hyperledger/fabric/peer/.env}"
+ENV_FILE="${ENV_FILE:-/etc/hyperledger/.env}"
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "ERROR: .env not found at $ENV_FILE"
-  echo "Copy .env.template to .env in the repo root on the VPS and fill in values first."
+  echo "Check the CA service's volume mounts in docker-compose.yml."
   exit 1
 fi
 set -a
@@ -55,8 +62,13 @@ set +a
 : "${CA_BOOTSTRAP_PASS:?CA_BOOTSTRAP_PASS not set in .env}"
 
 # --- Paths --------------------------------------------------------------------
-FABRIC_CA_CLIENT_HOME="/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ca-clients/${ORG_CODE}/bootstrap-admin"
-CA_TLS_CERT="/opt/gopath/src/github.com/hyperledger/fabric/peer/fabric-ca/${ORG_CODE}/tls-cert.pem"
+# NOTE: output is written under /etc/hyperledger/crypto-config, which is
+# bind-mounted from ./crypto-config in the repo root — the SAME host folder
+# the cli container and the orderer/peer containers already use. This keeps
+# a single, shared crypto-config tree regardless of which container performs
+# the enrollment.
+FABRIC_CA_CLIENT_HOME="/etc/hyperledger/crypto-config/ca-clients/${ORG_CODE}/bootstrap-admin"
+CA_TLS_CERT="/etc/hyperledger/fabric-ca-server/tls-cert.pem"
 
 echo "== Step 1: Enroll CA bootstrap admin (${CA_BOOTSTRAP_USER}) =="
 echo "CA:          https://${CA_HOST}:${CA_PORT} (name: ${CA_NAME})"
@@ -70,13 +82,13 @@ if [[ -d "${FABRIC_CA_CLIENT_HOME}/msp/signcerts" ]] && \
   exit 0
 fi
 
-# --- Sanity check: is the CA's TLS cert reachable from inside this container?
+# --- Sanity check: is the CA's own TLS cert available locally? ---------------
+# Since we're running inside the CA container itself, this file is always
+# present at this path once the server has started at least once.
 if [[ ! -f "$CA_TLS_CERT" ]]; then
   echo "ERROR: CA TLS cert not found at $CA_TLS_CERT"
-  echo "This file is generated by the CA on first start and lives on the VPS at"
-  echo "  /opt/rwrrn/fabric-ca/${ORG_CODE}/tls-cert.pem"
-  echo "Check that docker-compose.yml mounts ./fabric-ca/${ORG_CODE} into the cli"
-  echo "container too (it currently only mounts it into the CA service)."
+  echo "This is unexpected when running inside the CA container itself —"
+  echo "check that the server has started successfully at least once."
   exit 1
 fi
 
@@ -93,6 +105,8 @@ echo ""
 echo "== Done =="
 echo "Bootstrap admin enrolled. MSP written to:"
 echo "  ${FABRIC_CA_CLIENT_HOME}/msp"
+echo "(this path is inside ./crypto-config on the VPS host, so it will also"
+echo " be visible from the cli container / after switching to Option B)"
 echo ""
 echo "Next step (Step 2): register the real org admin identity, then register"
 echo "and enroll orderer0/orderer1/peer0/peer1. Do NOT proceed automatically —"
