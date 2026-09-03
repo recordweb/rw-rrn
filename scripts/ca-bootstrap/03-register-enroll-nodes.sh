@@ -4,6 +4,10 @@
 # =============================================================================
 # Step 3 of the RWRRN crypto-material bootstrap sequence.
 #
+# FIX vs. previous version: write_node_ou_config() no longer takes an unused
+# second parameter (was causing "$2: unbound variable" under `set -u` when
+# called with only one argument).
+#
 # EXECUTION CONTEXT (temporary — Option A, see note in Step 1 script):
 #   Run INSIDE the CA container (ca.tws.rwrrn.recordweb.dev).
 #
@@ -20,15 +24,10 @@
 #        the node's own hostname as CSR host/CN, into:
 #          .../orderers/<node>/tls   (renamed to server.key/server.crt/ca.crt)
 #          .../peers/<node>/tls      (same layout)
-#        This mirrors exactly what docker-compose.yml mounts for each
-#        orderer/peer service — this step is what resolves the original
-#        "could not load a valid signer certificate" panic.
 #
 # WHAT THIS DOES NOT DO:
-#   - Does NOT start/restart any orderer or peer container (do that manually
-#     with `docker compose up -d` afterwards, once you're ready to test).
-#   - Does NOT create the orderer system channel / genesis block / channel
-#     configuration — that is a separate, later step (channel bootstrap).
+#   - Does NOT start/restart any orderer or peer container.
+#   - Does NOT create the orderer system channel / genesis block.
 #   - Idempotent per-node/per-cert-type: skips any enrollment whose target
 #     directory already contains a certificate.
 #
@@ -92,7 +91,6 @@ fi
 
 write_node_ou_config() {
   local msp_dir="$1"
-  local node_type="$2" # "orderer" or "peer"
   local ca_cert_file
   ca_cert_file="$(ls "${msp_dir}/cacerts" | head -n1)"
   cat > "${msp_dir}/config.yaml" <<EOF
@@ -169,7 +167,7 @@ enroll_node_tls() {
   local id_name="$1"
   local id_secret="$2"
   local hostname="$3"
-  local target_tls_home="$4" # e.g. .../orderers/orderer0.../tls-raw (temp enroll home)
+  local target_tls_home="$4" # temp enroll home, discarded after copy
   local final_tls_dir="$5"   # e.g. .../orderers/orderer0.../tls
 
   if [[ -f "${final_tls_dir}/server.crt" ]] && [[ -f "${final_tls_dir}/server.key" ]]; then
@@ -184,12 +182,10 @@ enroll_node_tls() {
     --caname "${CA_NAME}" \
     --enrollment.profile tls \
     --csr.cn "${hostname}" \
-    --csr.hosts "${hostname}" \
-    --csr.hosts localhost \
+    --csr.hosts "${hostname},localhost" \
     --tls.certfiles "${CA_TLS_CERT}"
 
   cp "${target_tls_home}/msp/signcerts/cert.pem" "${final_tls_dir}/server.crt"
-  # fabric-ca-client TLS enrollment stores the key under a hashed filename.
   cp "${target_tls_home}/msp/keystore/"*_sk "${final_tls_dir}/server.key"
   cp "${target_tls_home}/msp/cacerts/"*.pem "${final_tls_dir}/ca.crt"
 
@@ -235,9 +231,6 @@ echo "== Done =="
 echo "Orderer MSP/TLS material under: ${ORDERER_BASE}/<node>/{msp,tls}"
 echo "Peer MSP/TLS material under:    ${PEER_BASE}/<node>/{msp,tls}"
 echo ""
-echo "Next: verify file ownership/permissions are readable by the fabric"
-echo "container user, then try starting orderer0/orderer1/peer0/peer1:"
-echo "  docker compose up -d orderer0.tws.rwrrn.recordweb.dev orderer1.tws.rwrrn.recordweb.dev"
-echo "  docker compose up -d peer0.tws.rwrrn.recordweb.dev peer1.tws.rwrrn.recordweb.dev"
-echo "Check logs immediately after with 'docker compose logs -f <service>'."
+echo "Next: verify SANs on the TLS certs from the VPS host (openssl not"
+echo "available inside this container), then try starting the containers."
 echo "Do not proceed automatically — confirm this step's output first."
