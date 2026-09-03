@@ -12,9 +12,7 @@
 # Run configtxgen from inside the cli container with:
 #   FABRIC_CFG_PATH=/opt/gopath/src/github.com/hyperledger/fabric/peer configtxgen ...
 # (or simply place this file at the working_dir root, which is what we do here)
-
 Organizations:
-
   - &TWSOrdererOrg
     Name: TWSOrdererMSP
     ID: TWSOrdererMSP
@@ -34,7 +32,6 @@ Organizations:
       - orderer1.tws.rwrrn.recordweb.dev:7150
       - orderer2.tws.rwrrn.recordweb.dev:7250
       - orderer3.tws.rwrrn.recordweb.dev:7350
-
   - &TWSOrg
     Name: TWSOrgMSP
     ID: TWSOrgMSP
@@ -55,7 +52,6 @@ Organizations:
     AnchorPeers:
       - Host: peer0.tws.rwrrn.recordweb.dev
         Port: 7051
-
 Capabilities:
   Channel: &ChannelCapabilities
     V3_0: true
@@ -63,7 +59,6 @@ Capabilities:
     V3_0: true
   Application: &ApplicationCapabilities
     V3_0: true
-
 Application: &ApplicationDefaults
   Organizations:
   Policies:
@@ -84,7 +79,6 @@ Application: &ApplicationDefaults
       Rule: "MAJORITY Endorsement"
   Capabilities:
     <<: *ApplicationCapabilities
-
 Orderer: &OrdererDefaults
   OrdererType: BFT
   SmartBFT:
@@ -159,7 +153,6 @@ Orderer: &OrdererDefaults
       ServerTLSCert: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer3.tws.rwrrn.recordweb.dev/tls/server.crt
   Capabilities:
     <<: *OrdererCapabilities
-
 Channel: &ChannelDefaults
   Policies:
     Readers:
@@ -173,9 +166,7 @@ Channel: &ChannelDefaults
       Rule: "MAJORITY Admins"
   Capabilities:
     <<: *ChannelCapabilities
-
 Profiles:
-
   # Used only to generate the application-channel *create* transaction / genesis
   # block for the Channel Participation API (osnadmin), not a system-channel
   # genesis block — Fabric 3.x application channels are bootstrapped directly,
