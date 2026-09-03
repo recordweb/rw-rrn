@@ -336,6 +336,7 @@ services:
       - ./scripts:/opt/gopath/src/github.com/hyperledger/fabric/peer/scripts
       - ./fabric-ca:/opt/gopath/src/github.com/hyperledger/fabric/peer/fabric-ca:ro
       - ./.env:/opt/gopath/src/github.com/hyperledger/fabric/peer/.env:ro
+      - ./configtx.yaml:/opt/gopath/src/github.com/hyperledger/fabric/peer/configtx.yaml:ro
     networks:
       - rwrrn_net
     depends_on:
