@@ -20,9 +20,20 @@
 # orderer org in Organizations:). Do NOT also set a global Orderer.Addresses
 # list — configtxgen rejects that combination with:
 #   "global orderer endpoints exist, but can not be used with V3_0
-#   capability" (hit and fixed 2026-09-03; see Fabric docs
-#   "Considerations for getting to v3.x" / OrdererEndpoints deprecation
-#   of global Orderer.Addresses since v1.4.2, enforced strictly at V3_0).
+#   capability" (hit and fixed 2026-09-03).
+#
+# IMPORTANT #3: do NOT add "Consortiums:" to the profile. Fabric v3.x has no
+# system channel; configtxgen warns "'Consortiums' should be nil since
+# system channel is no longer supported in Fabric v3.x" if present (hit
+# 2026-09-03, removed).
+#
+# IMPORTANT #4: each Organization's MSPDir must contain a populated
+# msp/cacerts/ (CA root cert) and msp/config.yaml (NodeOUs) at the ORG
+# level, not just at node/admin level. A live Fabric CA does not create
+# this automatically — see scripts/ca-bootstrap/06-provision-org-msp-cacerts.sh,
+# which must run once before this profile can be used (hit and fixed
+# 2026-09-03: "could not load a valid ca certificate from directory
+# .../msp/cacerts").
 
 Organizations:
 
@@ -109,9 +120,6 @@ Orderer: &OrdererDefaults
     LeaderHeartbeatTimeout: 1m
     LeaderHeartbeatCount: 10
     CollectTimeout: 1s
-  # NOTE: no global "Addresses:" list here — with V3_0 capability, orderer
-  # endpoints come exclusively from each org's OrdererEndpoints (above) and
-  # from ConsenterMapping (below). See IMPORTANT #2 note at file top.
   BatchTimeout: 2s
   BatchSize:
     MaxMessageCount: 100
@@ -193,4 +201,3 @@ Profiles:
         - *TWSOrg
       Capabilities:
         <<: *ApplicationCapabilities
-    Consortiums: {}
