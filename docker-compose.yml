@@ -3,27 +3,38 @@
 # Fabric 3.1.x
 #
 # CHANGE LOG (this revision):
-#   - Fabric images bumped from 2.5 -> 3.1 for orderer/peer/cli (fabric-ca stays 1.5,
-#     versioned independently and compatible with Fabric 3.x networks).
-#   - Orderer count increased from 2 to 4 (orderer0-orderer3): SmartBFT requires a
-#     minimum of 4 consenters (3F+1, F=1) to tolerate even a single faulty/malicious
-#     node. With only 2 orderers, BFT cannot provide any fault tolerance at all.
-#   - Orderer port scheme simplified/normalized: each orderer's ports are offset by
-#     a flat +100 from orderer0, instead of the previous ad-hoc +1000/+3 pattern.
+#   - cli service no longer uses hyperledger/fabric-tools (Docker Hub image
+#     discontinued since Fabric v3.0 — confirmed via hyperledger/fabric issue
+#     #5178). It now BUILDS a custom image from ./fabric-tools/Dockerfile.tools,
+#     which bundles the official Fabric 3.1.x release binaries (peer,
+#     configtxgen, configtxlator, cryptogen, osnadmin) plus fabric-ca-client
+#     (Fabric CA 1.5.x) in one image. Docker Compose builds this automatically
+#     on `docker compose up -d` if the image doesn't exist yet or the
+#     Dockerfile changed — no manual build step required.
+#   - This same image now also replaces the temporary "run fabric-ca-client
+#     inside the CA server container" workaround used during initial
+#     bootstrap (Option A -> Option B transition, agreed 2026-09-03). Bootstrap
+#     scripts (01-04) should now be run from THIS cli container instead of
+#     the ca.tws... container — see updated script headers.
+#   - Fabric images bumped from 2.5 -> 3.1 for orderer/peer (fabric-ca stays
+#     1.5, versioned independently, compatible with Fabric 3.x networks).
+#   - Orderer count increased from 2 to 4 (orderer0-orderer3): SmartBFT
+#     requires a minimum of 4 consenters (3F+1, F=1) for any fault tolerance.
+#   - Orderer port scheme: flat +100 offset per orderer from orderer0.
 #       orderer0: 7050 (general) / 7053 (admin) / 9443 (ops)
 #       orderer1: 7150 (general) / 7153 (admin) / 9543 (ops)
 #       orderer2: 7250 (general) / 7253 (admin) / 9643 (ops)
 #       orderer3: 7350 (general) / 7353 (admin) / 9743 (ops)
-#     orderer1 previously ran on 8050/8053/9446 — this is a breaking port change,
-#     update firewall rules and any external references accordingly.
-#   - ORDERER_GENERAL_LOCALMSPID corrected from the placeholder "OrdererMSP" to the
-#     agreed "TWSOrdererMSP" (Model B: TWS runs its own dedicated orderer-org MSP,
-#     distinct from TWSOrgMSP used by peers) — see chat decision 2026-09-03.
-#   - Consensus type (Raft vs BFT) is a CHANNEL configuration concern (OrdererType
-#     in configtx), not a docker-compose/env concern. This file only prepares the
-#     infrastructure (4 running orderer nodes with valid crypto material); the
-#     actual BFT channel bootstrap (genesis block / ConsenterMapping) is a
-#     separate, later step once all 4 orderers are verified running individually.
+#     orderer1 previously ran on 8050/8053/9446 — breaking port change, update
+#     firewall rules accordingly.
+#   - ORDERER_GENERAL_LOCALMSPID corrected from placeholder "OrdererMSP" to
+#     the agreed "TWSOrdererMSP" (Model B: TWS runs its own dedicated
+#     orderer-org MSP, distinct from TWSOrgMSP used by peers).
+#   - Consensus type (Raft vs BFT) is a CHANNEL configuration concern
+#     (OrdererType in configtx), not a docker-compose/env concern. This file
+#     only prepares infrastructure (4 running orderer nodes with valid crypto
+#     material); the actual BFT channel bootstrap (genesis block /
+#     ConsenterMapping) is a separate, later step.
 #
 # Hostnames (DNS + firewall must be updated by the operator before deploy):
 #   ca.tws.rwrrn.recordweb.dev       - Fabric CA (port 7054)
@@ -146,7 +157,7 @@ services:
     networks:
       - rwrrn_net
 
-  # ── Orderer 2 (new — required for SmartBFT minimum of 4 consenters) ───────
+  # ── Orderer 2 (SmartBFT minimum of 4 consenters) ──────────────────────────
   orderer2.tws.rwrrn.recordweb.dev:
     image: hyperledger/fabric-orderer:3.1
     container_name: orderer2.tws.rwrrn.recordweb.dev
@@ -181,7 +192,7 @@ services:
     networks:
       - rwrrn_net
 
-  # ── Orderer 3 (new — required for SmartBFT minimum of 4 consenters) ───────
+  # ── Orderer 3 (SmartBFT minimum of 4 consenters) ──────────────────────────
   orderer3.tws.rwrrn.recordweb.dev:
     image: hyperledger/fabric-orderer:3.1
     container_name: orderer3.tws.rwrrn.recordweb.dev
@@ -288,14 +299,25 @@ services:
     networks:
       - rwrrn_net
 
-  # ── CLI (fabric-tools) — for channel creation, chaincode ops, admin tasks ──
+  # ── CLI / Admin tools — custom-built image (see fabric-tools/Dockerfile.tools)
+  #    Replaces the discontinued hyperledger/fabric-tools Docker Hub image AND
+  #    the temporary "run fabric-ca-client inside the CA container" workaround.
+  #    Contains: peer, configtxgen, configtxlator, cryptogen, osnadmin,
+  #    fabric-ca-client — everything needed for channel bootstrap and ongoing
+  #    CA operations, in one place. ───────────────────────────────────────────
   cli:
-    image: hyperledger/fabric-tools:3.1
+    build:
+      context: ./fabric-tools
+      dockerfile: Dockerfile.tools
+      args:
+        FABRIC_VERSION: "3.1.5"
+        FABRIC_CA_VERSION: "1.5.22"
+    image: rwrrn-fabric-tools:3.1.5
     container_name: rwrrn-cli
     tty: true
     stdin_open: true
     environment:
-      - GOPATH=/opt/gopath
+      - FABRIC_CFG_PATH=/etc/hyperledger/fabric
       - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
       - FABRIC_LOGGING_SPEC=INFO
       - CORE_PEER_ID=cli

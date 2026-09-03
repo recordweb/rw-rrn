@@ -1,0 +1,78 @@
+# =============================================================================
+# fabric-tools/Dockerfile.tools
+# =============================================================================
+# RWRRN custom Fabric admin-tools image ("rwrrn-fabric-tools").
+#
+# WHY THIS EXISTS:
+#   As of Fabric v3.0, Hyperledger no longer publishes a "fabric-tools" Docker
+#   image (confirmed by Fabric maintainers, github.com/hyperledger/fabric
+#   issue #5178: "Images are no longer published since Fabric v3.0. If you
+#   need a Docker image containing Fabric binaries, I suggest building your
+#   own."). This Dockerfile is that "build your own" image, combining:
+#     - Fabric client binaries (peer, configtxgen, configtxlator, cryptogen,
+#       osnadmin, discover, ledgerutil) from the official GitHub release tarball
+#     - fabric-ca-client from the official fabric-ca GitHub release tarball
+#   into ONE image, replacing both the old hyperledger/fabric-tools:2.5 (cli
+#   service) AND the temporary "run fabric-ca-client inside the CA server
+#   container" workaround (Option A) used during initial bootstrap.
+#
+# USAGE (build on the VPS, where internet access is available):
+#   cd /opt/rwrrn/fabric-tools
+#   docker build -t rwrrn-fabric-tools:3.1.5 \
+#     --build-arg FABRIC_VERSION=3.1.5 \
+#     --build-arg FABRIC_CA_VERSION=1.5.22 \
+#     -f Dockerfile.tools .
+#
+# Then reference "rwrrn-fabric-tools:3.1.5" as the `cli` service image in
+# docker-compose.yml instead of the discontinued hyperledger/fabric-tools.
+#
+# VERSION PINNING:
+#   FABRIC_VERSION and FABRIC_CA_VERSION are build args, not hardcoded, so
+#   future organisations (MC, NB) or future upgrades only need to rebuild
+#   with new --build-arg values, no Dockerfile edits required.
+# =============================================================================
+
+FROM ubuntu:22.04
+
+ARG FABRIC_VERSION=3.1.5
+ARG FABRIC_CA_VERSION=1.5.22
+ARG TARGETARCH=amd64
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        jq \
+        openssl \
+        bash \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/local/bin
+
+# --- Fabric client binaries (peer, configtxgen, configtxlator, cryptogen,
+#     osnadmin, discover, ledgerutil) ----------------------------------------
+RUN curl -sSL \
+      "https://github.com/hyperledger/fabric/releases/download/v${FABRIC_VERSION}/hyperledger-fabric-linux-${TARGETARCH}-${FABRIC_VERSION}.tar.gz" \
+      -o /tmp/fabric.tar.gz && \
+    tar -xzf /tmp/fabric.tar.gz -C / && \
+    rm /tmp/fabric.tar.gz
+
+# --- Fabric CA client (and server binary, harmless to keep, useful for
+#     local diagnostics even though the CA itself runs in its own container) -
+RUN curl -sSL \
+      "https://github.com/hyperledger/fabric-ca/releases/download/v${FABRIC_CA_VERSION}/hyperledger-fabric-ca-linux-${TARGETARCH}-${FABRIC_CA_VERSION}.tar.gz" \
+      -o /tmp/fabric-ca.tar.gz && \
+    tar -xzf /tmp/fabric-ca.tar.gz -C / && \
+    rm /tmp/fabric-ca.tar.gz
+
+# The release tarballs extract into ./bin and ./config at the archive root;
+# make sure both land on PATH and in a predictable config location.
+ENV PATH="/bin:/usr/local/bin:${PATH}"
+ENV FABRIC_CFG_PATH=/etc/hyperledger/fabric
+
+RUN mkdir -p /etc/hyperledger/fabric && \
+    if [ -d /config ]; then cp -r /config/* /etc/hyperledger/fabric/ 2>/dev/null || true; fi
+
+WORKDIR /opt/gopath/src/github.com/hyperledger/fabric/peer
+
+CMD ["/bin/bash"]
