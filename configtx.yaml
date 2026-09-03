@@ -27,26 +27,44 @@
 # 2026-09-03, removed).
 #
 # IMPORTANT #4: each Organization's MSPDir must contain a populated
-# msp/cacerts/ (CA root cert) and msp/config.yaml (NodeOUs) at the ORG
-# level, not just at node/admin level. A live Fabric CA does not create
-# this automatically — see scripts/ca-bootstrap/06-provision-org-msp-cacerts.sh,
-# which must run once before this profile can be used (hit and fixed
-# 2026-09-03: "could not load a valid ca certificate from directory
-# .../msp/cacerts").
+# msp/cacerts/ AND msp/tlscacerts/ (both, same CA root cert, since we run
+# one Fabric CA with no separate TLS sub-CA) plus msp/config.yaml (NodeOUs)
+# at the ORG level, not just at node/admin level. A live Fabric CA does not
+# create these automatically:
+#   - msp/cacerts/    is read by configtxgen when loading the Organization.
+#   - msp/tlscacerts/ is read by the ORDERER CLUSTER layer at runtime
+#                      (msp.GetTLSRootCerts(), orderer/common/cluster/
+#                      util.go) to build each org's ServerRootCAs for
+#                      inter-consenter BFT gRPC. Missing it causes orderers
+#                      to fail connecting to each other with "server root
+#                      CA cert is nil" / "tls: bad certificate" — even
+#                      though each orderer individually joins the channel
+#                      successfully via osnadmin (status 201/active).
+# See scripts/ca-bootstrap/06-provision-org-msp-cacerts.sh, which must run
+# BEFORE configtxgen generates the block that gets distributed to orderers
+# (hit and fixed 2026-09-03; a stale block generated before tlscacerts/
+# existed had to be removed via `osnadmin channel remove` on all 4 orderers
+# and regenerated/rejoined after the fix).
 #
-# IMPORTANT #5: the Orderer capability group tops out at V2_0 in Fabric
-# 3.1.5 — there is no "OrdererV3_0" constant in Fabric's
-# common/capabilities/orderer.go (confirmed by source inspection,
-# 2026-09-03). Setting Orderer.Capabilities: V3_0 fails at channel-join
-# time (osnadmin) with:
-#   "Orderer capability V3_0 is required but not supported"
-# BFT consensus is activated via OrdererType: BFT (below) and the
-# ConsenterMapping, NOT via an Orderer-level capability flag. Only the
-# CHANNEL capability needs to be V3_0 for BFT — per the official BFT
-# configuration doc ("the channel capabilities V3.0 flag must be set to
-# true"). Application capability may independently be V3_0 or lower
-# depending on desired chaincode/lifecycle features; kept at V3_0 here
-# since peers are v3.1.5.
+# IMPORTANT #5: capability ceilings per group in Fabric 3.1.5 (confirmed by
+# source inspection of common/capabilities/*.go, 2026-09-03):
+#   - Channel:     highest defined constant is V3_0 (ChannelV3_0).
+#   - Orderer:     highest defined constant is V2_0 (OrdererV2_0) — there
+#                  is NO OrdererV3_0. Setting Orderer.Capabilities: V3_0
+#                  fails at channel-join time (osnadmin) with "Orderer
+#                  capability V3_0 is required but not supported".
+#   - Application: highest defined constant is V2_5 (ApplicationV2_5) —
+#                  there is NO ApplicationV3_0 either. Setting
+#                  Application.Capabilities: V3_0 fails at PEER channel
+#                  join time ("peer channel join") with "Application
+#                  capability V3_0 is required but not supported".
+# BFT consensus itself is activated via OrdererType: BFT + ConsenterMapping
+# (below), NOT via any Orderer/Application capability flag. Only the
+# CHANNEL capability needs to be V3_0 for BFT (per the official BFT
+# configuration doc: "the channel capabilities V3.0 flag must be set to
+# true"). Both issues (Orderer V3_0, then Application V3_0) were hit and
+# fixed in sequence on 2026-09-03 — same root misunderstanding applied
+# twice before being generalized here.
 
 Organizations:
 
@@ -98,8 +116,10 @@ Capabilities:
   # exists in Fabric 3.1.5. Do not set V3_0 here.
   Orderer: &OrdererCapabilities
     V2_0: true
+  # See IMPORTANT #5 above: V2_5 is the highest Application capability
+  # that exists in Fabric 3.1.5. Do not set V3_0 here.
   Application: &ApplicationCapabilities
-    V3_0: true
+    V2_5: true
 
 Application: &ApplicationDefaults
   Organizations:
