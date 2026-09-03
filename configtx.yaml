@@ -13,7 +13,6 @@
 #   FABRIC_CFG_PATH=/opt/gopath/src/github.com/hyperledger/fabric/peer configtxgen ...
 # (or simply place this file at the working_dir root, which is what we do here)
 
----
 Organizations:
 
   - &TWSOrdererOrg
@@ -57,7 +56,6 @@ Organizations:
       - Host: peer0.tws.rwrrn.recordweb.dev
         Port: 7051
 
----
 Capabilities:
   Channel: &ChannelCapabilities
     V3_0: true
@@ -66,7 +64,6 @@ Capabilities:
   Application: &ApplicationCapabilities
     V3_0: true
 
----
 Application: &ApplicationDefaults
   Organizations:
   Policies:
@@ -88,7 +85,6 @@ Application: &ApplicationDefaults
   Capabilities:
     <<: *ApplicationCapabilities
 
----
 Orderer: &OrdererDefaults
   OrdererType: BFT
   SmartBFT:
@@ -164,7 +160,6 @@ Orderer: &OrdererDefaults
   Capabilities:
     <<: *OrdererCapabilities
 
----
 Channel: &ChannelDefaults
   Policies:
     Readers:
@@ -179,7 +174,6 @@ Channel: &ChannelDefaults
   Capabilities:
     <<: *ChannelCapabilities
 
----
 Profiles:
 
   # Used only to generate the application-channel *create* transaction / genesis
