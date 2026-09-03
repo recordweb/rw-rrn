@@ -24,6 +24,10 @@
 #     (e.g. partial previous run), registration errors are treated as
 #     non-fatal ("already registered") and enrollment still proceeds.
 #
+# FIX vs. previous version: --id.attrs values that themselves contain commas
+# (e.g. the hf.Registrar.Roles list) must be individually quoted so the
+# fabric-ca-client attribute parser does not split on the inner commas.
+#
 # HOW TO RUN:
 #   docker compose exec ca.tws.rwrrn.recordweb.dev bash
 #   bash /etc/hyperledger/scripts/ca-bootstrap/02-register-enroll-org-admins.sh
@@ -45,6 +49,7 @@ source "$ENV_FILE"
 set +a
 
 : "${ORG_CODE:?ORG_CODE not set in .env}"
+: "${ORG_DOMAIN:?ORG_DOMAIN not set in .env}"
 : "${CA_NAME:?CA_NAME not set in .env}"
 : "${CA_HOST:?CA_HOST not set in .env}"
 : "${CA_PORT:?CA_PORT not set in .env}"
@@ -89,7 +94,11 @@ register_and_enroll_admin() {
     --id.name "${id_name}" \
     --id.secret "${id_secret}" \
     --id.type admin \
-    --id.attrs "hf.Registrar.Roles=client,orderer,peer,admin,hf.Registrar.Attributes=*,hf.Revoker=true,hf.GenCRL=true,admin=true:ecert" \
+    --id.attrs "hf.Registrar.Roles=client\,orderer\,peer\,admin" \
+    --id.attrs "hf.Registrar.Attributes=*" \
+    --id.attrs "hf.Revoker=true" \
+    --id.attrs "hf.GenCRL=true" \
+    --id.attrs "admin=true:ecert" \
     --caname "${CA_NAME}" \
     -u "https://${CA_HOST}:${CA_PORT}" \
     --tls.certfiles "${CA_TLS_CERT}" 2>&1)
@@ -118,20 +127,22 @@ register_and_enroll_admin() {
   # Fabric requires an explicit config.yaml (NodeOUs) in each MSP for
   # OU-based classification (admin/peer/orderer/client) to work correctly
   # when this MSP is later used by peer/orderer binaries.
+  local ca_cert_file
+  ca_cert_file="$(ls "${target_home}/msp/cacerts" | head -n1)"
   cat > "${target_home}/msp/config.yaml" <<EOF
 NodeOUs:
   Enable: true
   ClientOUIdentifier:
-    Certificate: cacerts/$(ls "${target_home}/msp/cacerts" | head -n1)
+    Certificate: cacerts/${ca_cert_file}
     OrganizationalUnitIdentifier: client
   PeerOUIdentifier:
-    Certificate: cacerts/$(ls "${target_home}/msp/cacerts" | head -n1)
+    Certificate: cacerts/${ca_cert_file}
     OrganizationalUnitIdentifier: peer
   AdminOUIdentifier:
-    Certificate: cacerts/$(ls "${target_home}/msp/cacerts" | head -n1)
+    Certificate: cacerts/${ca_cert_file}
     OrganizationalUnitIdentifier: admin
   OrdererOUIdentifier:
-    Certificate: cacerts/$(ls "${target_home}/msp/cacerts" | head -n1)
+    Certificate: cacerts/${ca_cert_file}
     OrganizationalUnitIdentifier: orderer
 EOF
 
