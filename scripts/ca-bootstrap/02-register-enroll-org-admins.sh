@@ -24,9 +24,14 @@
 #     (e.g. partial previous run), registration errors are treated as
 #     non-fatal ("already registered") and enrollment still proceeds.
 #
-# FIX vs. previous version: --id.attrs values that themselves contain commas
-# (e.g. the hf.Registrar.Roles list) must be individually quoted so the
-# fabric-ca-client attribute parser does not split on the inner commas.
+# FIX v2 vs. previous versions: fabric-ca-client's --id.attrs parser splits
+# on EVERY comma in the whole argument, no backslash-escaping honored. The
+# value list for hf.Registrar.Roles must instead be wrapped in double quotes
+# INSIDE the attribute string (name=value pair with a quoted value), per the
+# Fabric CA documentation, e.g.:  --id.attrs '"hf.Registrar.Roles=client,orderer,peer,admin"'
+# i.e. the outer shell quoting must preserve literal double quotes as part
+# of the value passed to the CA client, which then treats the double-quoted
+# segment as one atomic field despite the embedded commas.
 #
 # HOW TO RUN:
 #   docker compose exec ca.tws.rwrrn.recordweb.dev bash
@@ -87,6 +92,9 @@ register_and_enroll_admin() {
   fi
 
   # Register using the bootstrap admin's identity as registrar.
+  # NOTE: the roles list is wrapped in literal double quotes as part of the
+  # attribute value (\"...\") so fabric-ca-client treats the comma-separated
+  # list as one field instead of splitting on every comma.
   export FABRIC_CA_CLIENT_HOME="${BOOTSTRAP_ADMIN_HOME}"
   echo "Registering ${id_name} with CA..."
   set +e
@@ -94,7 +102,7 @@ register_and_enroll_admin() {
     --id.name "${id_name}" \
     --id.secret "${id_secret}" \
     --id.type admin \
-    --id.attrs "hf.Registrar.Roles=client\,orderer\,peer\,admin" \
+    --id.attrs "\"hf.Registrar.Roles=client,orderer,peer,admin\"" \
     --id.attrs "hf.Registrar.Attributes=*" \
     --id.attrs "hf.Revoker=true" \
     --id.attrs "hf.GenCRL=true" \
