@@ -4,9 +4,11 @@
 # =============================================================================
 # Step 3 of the RWRRN crypto-material bootstrap sequence.
 #
-# FIX vs. previous version: write_node_ou_config() no longer takes an unused
-# second parameter (was causing "$2: unbound variable" under `set -u` when
-# called with only one argument).
+# FIX v2 vs. previous version: TLS-profile enrollments store the CA root
+# certificate under msp/tlscacerts/ (NOT msp/cacerts/, which only exists for
+# regular/non-TLS enrollments). enroll_node_tls() now copies from the
+# correct directory, with a fallback to cacerts/ for older fabric-ca-client
+# versions that may still use that path.
 #
 # EXECUTION CONTEXT (temporary — Option A, see note in Step 1 script):
 #   Run INSIDE the CA container (ca.tws.rwrrn.recordweb.dev).
@@ -17,13 +19,10 @@
 #        admin from Step 2: tws-orderer-admin for orderers, tws-org-admin
 #        for peers).
 #     2. Enrolls the MSP certificate (signing identity) into the exact
-#        directory structure docker-compose.yml expects:
-#          crypto-config/ordererOrganizations/<domain>/orderers/<node>/msp
-#          crypto-config/peerOrganizations/<domain>/peers/<node>/msp
+#        directory structure docker-compose.yml expects.
 #     3. Enrolls a SEPARATE TLS certificate (--enrollment.profile tls) with
-#        the node's own hostname as CSR host/CN, into:
-#          .../orderers/<node>/tls   (renamed to server.key/server.crt/ca.crt)
-#          .../peers/<node>/tls      (same layout)
+#        the node's own hostname as CSR host/CN, laid out as
+#        server.crt/server.key/ca.crt under .../tls.
 #
 # WHAT THIS DOES NOT DO:
 #   - Does NOT start/restart any orderer or peer container.
@@ -36,8 +35,7 @@
 #   bash /etc/hyperledger/scripts/ca-bootstrap/03-register-enroll-nodes.sh
 #
 # PREREQUISITE:
-#   Step 2 script has run successfully (tws-org-admin and tws-orderer-admin
-#   MSPs exist).
+#   Step 2 script has run successfully.
 # =============================================================================
 
 set -euo pipefail
@@ -80,12 +78,10 @@ ORG_ADMIN_HOME="${CRYPTO_ROOT}/peerOrganizations/${ORG_DOMAIN}/users/${ORG_ADMIN
 
 if [[ ! -d "${ORDERER_ADMIN_HOME}/msp/signcerts" ]]; then
   echo "ERROR: ${ORDERER_ADMIN_USER} MSP not found at ${ORDERER_ADMIN_HOME}/msp"
-  echo "Run Step 2 first."
   exit 1
 fi
 if [[ ! -d "${ORG_ADMIN_HOME}/msp/signcerts" ]]; then
   echo "ERROR: ${ORG_ADMIN_USER} MSP not found at ${ORG_ADMIN_HOME}/msp"
-  echo "Run Step 2 first."
   exit 1
 fi
 
@@ -111,12 +107,11 @@ NodeOUs:
 EOF
 }
 
-# --- Helper: register a node identity (idempotent) --------------------------
 register_node() {
   local registrar_home="$1"
   local id_name="$2"
   local id_secret="$3"
-  local id_type="$4" # "orderer" or "peer"
+  local id_type="$4"
 
   export FABRIC_CA_CLIENT_HOME="${registrar_home}"
   set +e
@@ -137,11 +132,10 @@ register_node() {
   return 0
 }
 
-# --- Helper: enroll MSP (signing) certificate for a node --------------------
 enroll_node_msp() {
   local id_name="$1"
   local id_secret="$2"
-  local target_msp_home="$3" # e.g. .../orderers/orderer0.../  (script appends /msp)
+  local target_msp_home="$3"
 
   if [[ -d "${target_msp_home}/msp/signcerts" ]] && \
      [[ -n "$(ls -A "${target_msp_home}/msp/signcerts" 2>/dev/null)" ]]; then
@@ -161,14 +155,12 @@ enroll_node_msp() {
   echo "${id_name} MSP enrolled -> ${target_msp_home}/msp"
 }
 
-# --- Helper: enroll TLS certificate for a node, laid out as server.{key,crt}
-#     + ca.crt, matching what docker-compose.yml mounts as .../tls ----------
 enroll_node_tls() {
   local id_name="$1"
   local id_secret="$2"
   local hostname="$3"
-  local target_tls_home="$4" # temp enroll home, discarded after copy
-  local final_tls_dir="$5"   # e.g. .../orderers/orderer0.../tls
+  local target_tls_home="$4"
+  local final_tls_dir="$5"
 
   if [[ -f "${final_tls_dir}/server.crt" ]] && [[ -f "${final_tls_dir}/server.key" ]]; then
     echo "${id_name} TLS cert already present at ${final_tls_dir} — skipping."
@@ -187,7 +179,19 @@ enroll_node_tls() {
 
   cp "${target_tls_home}/msp/signcerts/cert.pem" "${final_tls_dir}/server.crt"
   cp "${target_tls_home}/msp/keystore/"*_sk "${final_tls_dir}/server.key"
-  cp "${target_tls_home}/msp/cacerts/"*.pem "${final_tls_dir}/ca.crt"
+
+  # TLS-profile enrollments store the CA root cert under tlscacerts/, not
+  # cacerts/ (that directory only exists for regular/ecert enrollments).
+  if [[ -d "${target_tls_home}/msp/tlscacerts" ]] && \
+     [[ -n "$(ls -A "${target_tls_home}/msp/tlscacerts" 2>/dev/null)" ]]; then
+    cp "${target_tls_home}/msp/tlscacerts/"*.pem "${final_tls_dir}/ca.crt"
+  elif [[ -d "${target_tls_home}/msp/cacerts" ]] && \
+       [[ -n "$(ls -A "${target_tls_home}/msp/cacerts" 2>/dev/null)" ]]; then
+    cp "${target_tls_home}/msp/cacerts/"*.pem "${final_tls_dir}/ca.crt"
+  else
+    echo "ERROR: could not find CA root cert in either tlscacerts/ or cacerts/ under ${target_tls_home}/msp"
+    return 1
+  fi
 
   echo "${id_name} TLS cert enrolled -> ${final_tls_dir}"
 }
