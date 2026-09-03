@@ -16,15 +16,18 @@
 #   service) AND the temporary "run fabric-ca-client inside the CA server
 #   container" workaround (Option A) used during initial bootstrap.
 #
-# USAGE (build on the VPS, where internet access is available):
-#   cd /opt/rwrrn/fabric-tools
-#   docker build -t rwrrn-fabric-tools:3.1.5 \
-#     --build-arg FABRIC_VERSION=3.1.5 \
-#     --build-arg FABRIC_CA_VERSION=1.5.22 \
-#     -f Dockerfile.tools .
+# FIX vs. previous version: release tarballs extract with their OWN internal
+# bin/ and config/ directories, not path-prefixed. Extracting directly to "/"
+# with `tar -C /` dumps their bin/ contents into the SYSTEM /bin/ directory,
+# which on Ubuntu is a symlink to /usr/bin — this silently clobbered /bin/sh
+# and broke the container ("stat /bin/sh: no such file or directory") on the
+# very next RUN step. Fix: extract each tarball into its own isolated
+# directory under /opt, then explicitly symlink only the needed binaries into
+# /usr/local/bin. This never touches system directories.
 #
-# Then reference "rwrrn-fabric-tools:3.1.5" as the `cli` service image in
-# docker-compose.yml instead of the discontinued hyperledger/fabric-tools.
+# USAGE (build on the VPS, where internet access is available):
+#   Handled automatically by `docker compose up -d` via the `build:` section
+#   in docker-compose.yml — no manual build step required.
 #
 # VERSION PINNING:
 #   FABRIC_VERSION and FABRIC_CA_VERSION are build args, not hardcoded, so
@@ -47,31 +50,33 @@ RUN apt-get update && \
         bash \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /usr/local/bin
-
 # --- Fabric client binaries (peer, configtxgen, configtxlator, cryptogen,
-#     osnadmin, discover, ledgerutil) ----------------------------------------
-RUN curl -sSL \
+#     osnadmin, discover, ledgerutil) — extracted into an isolated directory,
+#     NOT into system /bin or /config. ----------------------------------------
+RUN mkdir -p /opt/fabric && \
+    curl -sSL \
       "https://github.com/hyperledger/fabric/releases/download/v${FABRIC_VERSION}/hyperledger-fabric-linux-${TARGETARCH}-${FABRIC_VERSION}.tar.gz" \
       -o /tmp/fabric.tar.gz && \
-    tar -xzf /tmp/fabric.tar.gz -C / && \
+    tar -xzf /tmp/fabric.tar.gz -C /opt/fabric && \
     rm /tmp/fabric.tar.gz
 
-# --- Fabric CA client (and server binary, harmless to keep, useful for
-#     local diagnostics even though the CA itself runs in its own container) -
-RUN curl -sSL \
+# --- Fabric CA client (and server binary, harmless to keep) — same isolated
+#     extraction approach. ----------------------------------------------------
+RUN mkdir -p /opt/fabric-ca && \
+    curl -sSL \
       "https://github.com/hyperledger/fabric-ca/releases/download/v${FABRIC_CA_VERSION}/hyperledger-fabric-ca-linux-${TARGETARCH}-${FABRIC_CA_VERSION}.tar.gz" \
       -o /tmp/fabric-ca.tar.gz && \
-    tar -xzf /tmp/fabric-ca.tar.gz -C / && \
+    tar -xzf /tmp/fabric-ca.tar.gz -C /opt/fabric-ca && \
     rm /tmp/fabric-ca.tar.gz
 
-# The release tarballs extract into ./bin and ./config at the archive root;
-# make sure both land on PATH and in a predictable config location.
-ENV PATH="/bin:/usr/local/bin:${PATH}"
-ENV FABRIC_CFG_PATH=/etc/hyperledger/fabric
+# --- Expose binaries on PATH via symlinks into /usr/local/bin, never
+#     touching system directories directly. ----------------------------------
+RUN for f in /opt/fabric/bin/*; do ln -sf "$f" /usr/local/bin/"$(basename "$f")"; done && \
+    for f in /opt/fabric-ca/bin/*; do ln -sf "$f" /usr/local/bin/"$(basename "$f")"; done
 
+ENV FABRIC_CFG_PATH=/etc/hyperledger/fabric
 RUN mkdir -p /etc/hyperledger/fabric && \
-    if [ -d /config ]; then cp -r /config/* /etc/hyperledger/fabric/ 2>/dev/null || true; fi
+    if [ -d /opt/fabric/config ]; then cp -r /opt/fabric/config/* /etc/hyperledger/fabric/ 2>/dev/null || true; fi
 
 WORKDIR /opt/gopath/src/github.com/hyperledger/fabric/peer
 
