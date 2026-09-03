@@ -4,38 +4,42 @@
 # =============================================================================
 # Step 3 of the RWRRN crypto-material bootstrap sequence.
 #
-# FIX v2 vs. previous version: TLS-profile enrollments store the CA root
-# certificate under msp/tlscacerts/ (NOT msp/cacerts/, which only exists for
-# regular/non-TLS enrollments). enroll_node_tls() now copies from the
-# correct directory, with a fallback to cacerts/ for older fabric-ca-client
-# versions that may still use that path.
+# v4 CHANGE: extended from 2 to 4 orderers (orderer0-orderer3), required for
+# the switch to SmartBFT consensus (minimum 4 consenters for any fault
+# tolerance). Peers remain at 2 (peer0/peer1) — SmartBFT's minimum-node
+# requirement applies to ORDERERS only, not peers.
+#
+# New .env variables required (add alongside the existing ORDERER0_*/ORDERER1_*):
+#   ORDERER2_NAME=orderer2.tws.rwrrn.recordweb.dev
+#   ORDERER2_ENROLL_ID=orderer2
+#   ORDERER2_ENROLL_SECRET=<your new secret>
+#   ORDERER3_NAME=orderer3.tws.rwrrn.recordweb.dev
+#   ORDERER3_ENROLL_ID=orderer3
+#   ORDERER3_ENROLL_SECRET=<your new secret>
 #
 # EXECUTION CONTEXT (temporary — Option A, see note in Step 1 script):
 #   Run INSIDE the CA container (ca.tws.rwrrn.recordweb.dev).
 #
 # WHAT THIS DOES:
-#   For each of orderer0, orderer1, peer0, peer1:
+#   For each of orderer0, orderer1, orderer2, orderer3, peer0, peer1:
 #     1. Registers a node identity with the CA (registrar = the matching org
-#        admin from Step 2: tws-orderer-admin for orderers, tws-org-admin
-#        for peers).
-#     2. Enrolls the MSP certificate (signing identity) into the exact
-#        directory structure docker-compose.yml expects.
-#     3. Enrolls a SEPARATE TLS certificate (--enrollment.profile tls) with
-#        the node's own hostname as CSR host/CN, laid out as
-#        server.crt/server.key/ca.crt under .../tls.
+#        admin: tws-orderer-admin for orderers, tws-org-admin for peers).
+#     2. Enrolls the MSP certificate (signing identity).
+#     3. Enrolls a SEPARATE TLS certificate (--enrollment.profile tls).
+#   Idempotent: orderer0/orderer1/peer0/peer1 will be skipped entirely since
+#   their certificates already exist from the previous run — only
+#   orderer2/orderer3 will actually enroll anything new.
 #
 # WHAT THIS DOES NOT DO:
 #   - Does NOT start/restart any orderer or peer container.
-#   - Does NOT create the orderer system channel / genesis block.
-#   - Idempotent per-node/per-cert-type: skips any enrollment whose target
-#     directory already contains a certificate.
+#   - Does NOT create the channel / genesis block / BFT ConsenterMapping.
 #
 # HOW TO RUN:
 #   docker compose exec ca.tws.rwrrn.recordweb.dev bash
 #   bash /etc/hyperledger/scripts/ca-bootstrap/03-register-enroll-nodes.sh
 #
 # PREREQUISITE:
-#   Step 2 script has run successfully.
+#   Step 2 script has run successfully. .env updated with ORDERER2_*/ORDERER3_*.
 # =============================================================================
 
 set -euo pipefail
@@ -64,6 +68,12 @@ set +a
 : "${ORDERER1_NAME:?ORDERER1_NAME not set in .env}"
 : "${ORDERER1_ENROLL_ID:?ORDERER1_ENROLL_ID not set in .env}"
 : "${ORDERER1_ENROLL_SECRET:?ORDERER1_ENROLL_SECRET not set in .env}"
+: "${ORDERER2_NAME:?ORDERER2_NAME not set in .env — add it for the BFT expansion}"
+: "${ORDERER2_ENROLL_ID:?ORDERER2_ENROLL_ID not set in .env}"
+: "${ORDERER2_ENROLL_SECRET:?ORDERER2_ENROLL_SECRET not set in .env}"
+: "${ORDERER3_NAME:?ORDERER3_NAME not set in .env — add it for the BFT expansion}"
+: "${ORDERER3_ENROLL_ID:?ORDERER3_ENROLL_ID not set in .env}"
+: "${ORDERER3_ENROLL_SECRET:?ORDERER3_ENROLL_SECRET not set in .env}"
 : "${PEER0_NAME:?PEER0_NAME not set in .env}"
 : "${PEER0_ENROLL_ID:?PEER0_ENROLL_ID not set in .env}"
 : "${PEER0_ENROLL_SECRET:?PEER0_ENROLL_SECRET not set in .env}"
@@ -152,6 +162,7 @@ enroll_node_msp() {
     --tls.certfiles "${CA_TLS_CERT}"
 
   write_node_ou_config "${target_msp_home}/msp"
+  chmod 644 "${target_msp_home}/msp/signcerts/"*.pem 2>/dev/null || true
   echo "${id_name} MSP enrolled -> ${target_msp_home}/msp"
 }
 
@@ -162,8 +173,10 @@ enroll_node_tls() {
   local target_tls_home="$4"
   local final_tls_dir="$5"
 
-  if [[ -f "${final_tls_dir}/server.crt" ]] && [[ -f "${final_tls_dir}/server.key" ]]; then
-    echo "${id_name} TLS cert already present at ${final_tls_dir} — skipping."
+  if [[ -f "${final_tls_dir}/server.crt" ]] && \
+     [[ -f "${final_tls_dir}/server.key" ]] && \
+     [[ -f "${final_tls_dir}/ca.crt" ]]; then
+    echo "${id_name} TLS cert already fully present at ${final_tls_dir} — skipping."
     return 0
   fi
 
@@ -180,8 +193,6 @@ enroll_node_tls() {
   cp "${target_tls_home}/msp/signcerts/cert.pem" "${final_tls_dir}/server.crt"
   cp "${target_tls_home}/msp/keystore/"*_sk "${final_tls_dir}/server.key"
 
-  # TLS-profile enrollments store the CA root cert under tlscacerts/, not
-  # cacerts/ (that directory only exists for regular/ecert enrollments).
   if [[ -d "${target_tls_home}/msp/tlscacerts" ]] && \
      [[ -n "$(ls -A "${target_tls_home}/msp/tlscacerts" 2>/dev/null)" ]]; then
     cp "${target_tls_home}/msp/tlscacerts/"*.pem "${final_tls_dir}/ca.crt"
@@ -193,6 +204,9 @@ enroll_node_tls() {
     return 1
   fi
 
+  chmod 644 "${final_tls_dir}/server.crt" "${final_tls_dir}/ca.crt"
+  chmod 600 "${final_tls_dir}/server.key"
+
   echo "${id_name} TLS cert enrolled -> ${final_tls_dir}"
 }
 
@@ -202,7 +216,9 @@ enroll_node_tls() {
 ORDERER_BASE="${CRYPTO_ROOT}/ordererOrganizations/${ORG_DOMAIN}/orderers"
 
 for triple in "${ORDERER0_NAME}:${ORDERER0_ENROLL_ID}:${ORDERER0_ENROLL_SECRET}" \
-              "${ORDERER1_NAME}:${ORDERER1_ENROLL_ID}:${ORDERER1_ENROLL_SECRET}"; do
+              "${ORDERER1_NAME}:${ORDERER1_ENROLL_ID}:${ORDERER1_ENROLL_SECRET}" \
+              "${ORDERER2_NAME}:${ORDERER2_ENROLL_ID}:${ORDERER2_ENROLL_SECRET}" \
+              "${ORDERER3_NAME}:${ORDERER3_ENROLL_ID}:${ORDERER3_ENROLL_SECRET}"; do
   IFS=":" read -r node_name enroll_id enroll_secret <<< "$triple"
   echo ""
   echo "==== ${node_name} ===="
@@ -235,6 +251,5 @@ echo "== Done =="
 echo "Orderer MSP/TLS material under: ${ORDERER_BASE}/<node>/{msp,tls}"
 echo "Peer MSP/TLS material under:    ${PEER_BASE}/<node>/{msp,tls}"
 echo ""
-echo "Next: verify SANs on the TLS certs from the VPS host (openssl not"
-echo "available inside this container), then try starting the containers."
-echo "Do not proceed automatically — confirm this step's output first."
+echo "Next: run 04-copy-admincerts-to-nodes.sh (also extended for orderer2/3),"
+echo "then verify each new orderer starts cleanly, one at a time."

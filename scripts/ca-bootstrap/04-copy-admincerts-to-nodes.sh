@@ -4,33 +4,26 @@
 # =============================================================================
 # Step 4 of the RWRRN crypto-material bootstrap sequence.
 #
-# WHY THIS IS NEEDED:
-#   Orderer/peer startup failed with:
-#     "administrators must be declared when no admin ou classification is set"
-#   Even with NodeOUs enabled (config.yaml present with AdminOUIdentifier),
-#   Fabric's local MSP loader still requires at least one certificate in
-#   admincerts/ for each node's local MSP folder — this is what lets Fabric
-#   resolve "who is an admin of this MSP" when the node starts up, independent
-#   of channel-level MSP config (which is a separate, later concern once we
-#   create channels).
+# v2 CHANGE: extended from 2 to 4 orderers (orderer0-orderer3) for the
+# SmartBFT expansion. Peers remain at 2 (peer0/peer1).
 #
-# WHAT THIS DOES:
-#   Copies the enrolled org-admin certificate into admincerts/ for every
-#   node's local MSP:
-#     - tws-orderer-admin's cert -> orderer0/msp/admincerts/, orderer1/msp/admincerts/
-#     - tws-org-admin's cert     -> peer0/msp/admincerts/,   peer1/msp/admincerts/
-#   Also copies each org-admin's own MSP folder into a top-level
-#   crypto-config/.../msp location (Fabric convention: <org>/msp/admincerts
-#   at the organization level, used later for channel/genesis config), so
-#   this material is ready for the channel-creation step too.
+# WHY THIS IS NEEDED:
+#   Orderer/peer startup fails with:
+#     "administrators must be declared when no admin ou classification is set"
+#   unless admincerts/ contains at least one certificate per node's local MSP.
 #
 # EXECUTION CONTEXT:
-#   Can run on the VPS HOST directly (plain file copy, no fabric-ca-client
-#   needed) — no need to enter any container for this step.
+#   Run on the VPS HOST directly (plain file copy, no fabric-ca-client
+#   needed) — no need to enter any container. Requires sudo if crypto-config
+#   files are owned by root (they are, since the CA container writes them
+#   as root).
 #
 # HOW TO RUN:
 #   cd /opt/rwrrn
-#   bash scripts/ca-bootstrap/04-copy-admincerts-to-nodes.sh
+#   sudo bash scripts/ca-bootstrap/04-copy-admincerts-to-nodes.sh
+#
+# PREREQUISITE:
+#   Step 3 (v4) has run successfully for all four orderers and both peers.
 # =============================================================================
 
 set -euo pipefail
@@ -50,6 +43,8 @@ set +a
 : "${ORDERER_ADMIN_USER:?ORDERER_ADMIN_USER not set in .env}"
 : "${ORDERER0_NAME:?ORDERER0_NAME not set in .env}"
 : "${ORDERER1_NAME:?ORDERER1_NAME not set in .env}"
+: "${ORDERER2_NAME:?ORDERER2_NAME not set in .env}"
+: "${ORDERER3_NAME:?ORDERER3_NAME not set in .env}"
 : "${PEER0_NAME:?PEER0_NAME not set in .env}"
 : "${PEER1_NAME:?PEER1_NAME not set in .env}"
 
@@ -69,23 +64,28 @@ fi
 copy_admincert() {
   local admin_cert="$1"
   local node_msp_dir="$2"
+  if [[ -f "${node_msp_dir}/admincerts/cert.pem" ]]; then
+    echo "admincert already present at ${node_msp_dir}/admincerts/cert.pem — skipping."
+    return 0
+  fi
   mkdir -p "${node_msp_dir}/admincerts"
   cp "${admin_cert}" "${node_msp_dir}/admincerts/cert.pem"
+  chmod 644 "${node_msp_dir}/admincerts/cert.pem"
   echo "Copied admin cert -> ${node_msp_dir}/admincerts/cert.pem"
 }
 
 echo "== Orderer nodes (admin: ${ORDERER_ADMIN_USER}) =="
-copy_admincert "${ORDERER_ADMIN_CERT}" \
-  "${CRYPTO_ROOT}/ordererOrganizations/${ORG_DOMAIN}/orderers/${ORDERER0_NAME}/msp"
-copy_admincert "${ORDERER_ADMIN_CERT}" \
-  "${CRYPTO_ROOT}/ordererOrganizations/${ORG_DOMAIN}/orderers/${ORDERER1_NAME}/msp"
+for node_name in "${ORDERER0_NAME}" "${ORDERER1_NAME}" "${ORDERER2_NAME}" "${ORDERER3_NAME}"; do
+  copy_admincert "${ORDERER_ADMIN_CERT}" \
+    "${CRYPTO_ROOT}/ordererOrganizations/${ORG_DOMAIN}/orderers/${node_name}/msp"
+done
 
 echo ""
 echo "== Peer nodes (admin: ${ORG_ADMIN_USER}) =="
-copy_admincert "${ORG_ADMIN_CERT}" \
-  "${CRYPTO_ROOT}/peerOrganizations/${ORG_DOMAIN}/peers/${PEER0_NAME}/msp"
-copy_admincert "${ORG_ADMIN_CERT}" \
-  "${CRYPTO_ROOT}/peerOrganizations/${ORG_DOMAIN}/peers/${PEER1_NAME}/msp"
+for node_name in "${PEER0_NAME}" "${PEER1_NAME}"; do
+  copy_admincert "${ORG_ADMIN_CERT}" \
+    "${CRYPTO_ROOT}/peerOrganizations/${ORG_DOMAIN}/peers/${node_name}/msp"
+done
 
 echo ""
 echo "== Org-level admincerts (for later channel/genesis config) =="
@@ -93,11 +93,15 @@ mkdir -p "${CRYPTO_ROOT}/ordererOrganizations/${ORG_DOMAIN}/msp/admincerts"
 cp "${ORDERER_ADMIN_CERT}" "${CRYPTO_ROOT}/ordererOrganizations/${ORG_DOMAIN}/msp/admincerts/cert.pem"
 mkdir -p "${CRYPTO_ROOT}/peerOrganizations/${ORG_DOMAIN}/msp/admincerts"
 cp "${ORG_ADMIN_CERT}" "${CRYPTO_ROOT}/peerOrganizations/${ORG_DOMAIN}/msp/admincerts/cert.pem"
+chmod 644 "${CRYPTO_ROOT}/ordererOrganizations/${ORG_DOMAIN}/msp/admincerts/cert.pem"
+chmod 644 "${CRYPTO_ROOT}/peerOrganizations/${ORG_DOMAIN}/msp/admincerts/cert.pem"
 echo "Org-level admincerts staged for channel bootstrap step."
 
 echo ""
 echo "== Done =="
-echo "Restart orderer0 to verify the panic is resolved:"
-echo "  docker compose up -d orderer0.tws.rwrrn.recordweb.dev"
-echo "  docker compose logs orderer0.tws.rwrrn.recordweb.dev --tail=30"
-echo "Do not start all four nodes at once yet — verify orderer0 first."
+echo "Start orderer2 and orderer3 ONE AT A TIME to verify:"
+echo "  docker compose up -d orderer2.tws.rwrrn.recordweb.dev"
+echo "  docker compose logs orderer2.tws.rwrrn.recordweb.dev --tail=30"
+echo "  (then) docker compose up -d orderer3.tws.rwrrn.recordweb.dev"
+echo "  docker compose logs orderer3.tws.rwrrn.recordweb.dev --tail=30"
+echo "Do not start all remaining services at once yet."
