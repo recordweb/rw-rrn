@@ -3,7 +3,6 @@
 # Channel name for this bootstrap: root-resolver-test
 # Consensus: SmartBFT, 4 consenters (orderer0-orderer3), TWSOrdererMSP
 # Peer org: TWSOrgMSP (peer0, peer1)
-# Channel capability: V3_0 (required for BFT)
 #
 # Paths below are relative to the cli container's working_dir
 # (/opt/gopath/src/github.com/hyperledger/fabric/peer), matching the
@@ -34,6 +33,20 @@
 # which must run once before this profile can be used (hit and fixed
 # 2026-09-03: "could not load a valid ca certificate from directory
 # .../msp/cacerts").
+#
+# IMPORTANT #5: the Orderer capability group tops out at V2_0 in Fabric
+# 3.1.5 — there is no "OrdererV3_0" constant in Fabric's
+# common/capabilities/orderer.go (confirmed by source inspection,
+# 2026-09-03). Setting Orderer.Capabilities: V3_0 fails at channel-join
+# time (osnadmin) with:
+#   "Orderer capability V3_0 is required but not supported"
+# BFT consensus is activated via OrdererType: BFT (below) and the
+# ConsenterMapping, NOT via an Orderer-level capability flag. Only the
+# CHANNEL capability needs to be V3_0 for BFT — per the official BFT
+# configuration doc ("the channel capabilities V3.0 flag must be set to
+# true"). Application capability may independently be V3_0 or lower
+# depending on desired chaincode/lifecycle features; kept at V3_0 here
+# since peers are v3.1.5.
 
 Organizations:
 
@@ -81,8 +94,10 @@ Organizations:
 Capabilities:
   Channel: &ChannelCapabilities
     V3_0: true
+  # See IMPORTANT #5 above: V2_0 is the highest Orderer capability that
+  # exists in Fabric 3.1.5. Do not set V3_0 here.
   Orderer: &OrdererCapabilities
-    V3_0: true
+    V2_0: true
   Application: &ApplicationCapabilities
     V3_0: true
 
