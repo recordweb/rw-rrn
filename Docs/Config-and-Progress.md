@@ -10,7 +10,7 @@ Companion documents:
 
 Working method (agreed): small interactive steps. The assistant proposes a concrete next step; the human executes and confirms (or reports errors) before proceeding. This document is updated only at significant milestones, not after every micro-step, so that work can resume in a fresh chat session without losing context.
 
-Repository: [recordweb/rwrrn](https://github.com/recordweb/rwrrn) — holds the planning documents, network configuration (`docker-compose.yml`), the custom tools image (`fabric-tools/`), CA-bootstrap scripts (`scripts/ca-bootstrap/`), and the GitHub Actions deployment workflow (`.github/workflows/deploy.yml`).
+Repository: [recordweb/rwrrn](https://github.com/recordweb/rwrrn) — holds the planning documents, network configuration (`docker-compose.yml`, `configtx.yaml`), the custom tools image (`fabric-tools/`), CA-bootstrap scripts (`scripts/ca-bootstrap/`), and the GitHub Actions deployment workflow (`.github/workflows/deploy.yml`).
 
 ---
 
@@ -40,6 +40,8 @@ These decisions supersede anything stated differently in `RootResolver-Network-P
 | D6 | `hyperledger/fabric-tools` Docker image is **not used**. A custom image `rwrrn-fabric-tools` is built from `fabric-tools/Dockerfile.tools` (via `docker compose build`, automatic on `docker compose up -d`). | Hyperledger confirmed (github.com/hyperledger/fabric issue #5178) that no `fabric-tools` image has been published since Fabric v3.0; the recommended path is to build your own from the official release binaries. The custom image bundles Fabric client binaries (peer, configtxgen, configtxlator, cryptogen, osnadmin) AND `fabric-ca-client` in one image, so it also serves as the CA administration tool (see D7). |
 | D7 | All CA administration (enroll/register operations) runs from the `cli` service (image `rwrrn-fabric-tools`), not from inside the `ca.tws...` server container. | Cleaner separation of concerns: the CA container stays a pure server; all client-side operations happen from one dedicated admin-tools container. This was an interim workaround (running `fabric-ca-client` inside the CA container) during initial bootstrap, now retired. |
 | D8 | Crypto material is generated via a **live Fabric CA server**, not `cryptogen`. | Required for a network that must support ongoing identity issuance as new node types/operators are added (see `RootResolver-Network-Planning.md` Section 4.6). `cryptogen` only supports a one-time, static crypto-material generation and is unsuitable beyond throwaway test networks. |
+| D9 | Test-channel name: **`root-resolver-test`**, distinct from the eventual production channel name `root-resolver` (reused from the existing `root-resolver-testnet` repo's channel naming). | Keeps the Stage 1 SmartBFT test channel unambiguous and clearly disposable, while signalling its relationship to the eventual production channel. Channel name is valid per Fabric's naming rule (`[a-z][a-z0-9.-]*`, max 249 chars). |
+| D10 | Channel capability ceilings differ **per capability group** in Fabric 3.1.5: `Channel` tops out at `V3_0`, but `Orderer` tops out at `V2_0` and `Application` tops out at `V2_5`. There is no `OrdererV3_0` or `ApplicationV3_0` constant in Fabric's source (`common/capabilities/*.go`). | Confirmed by direct source inspection on 2026-09-03 after both were tried and rejected at runtime (see Bugs Encountered, Step 2). BFT itself is activated via `OrdererType: BFT` + `ConsenterMapping`, not via any Orderer/Application capability flag — only the **Channel** capability needs to be `V3_0` for BFT, per the official BFT configuration doc. |
 
 ---
 
@@ -49,17 +51,20 @@ These decisions supersede anything stated differently in `RootResolver-Network-P
 rwrrn/
 ├── .github/workflows/deploy.yml      # SSH deploy on push to main (git fetch + reset --hard + docker compose up -d)
 ├── docker-compose.yml                 # All 8 services: CA, orderer0-3, peer0-1, cli
+├── configtx.yaml                      # Channel configuration (BFT, ConsenterMapping, capabilities) — see Step 2 below
 ├── .env.template                      # Copy to .env on the VPS, fill in real secrets — NEVER commit .env itself
 ├── fabric-tools/
 │   └── Dockerfile.tools               # Builds rwrrn-fabric-tools (peer/configtxgen/.../fabric-ca-client bundle)
 ├── fabric-ca/tws/                     # Fabric CA server home dir (auto-generated on first start; contains CA root key)
 ├── crypto-config/                     # All enrolled MSP + TLS material (mounted into CA, orderer, peer, cli containers)
-├── channel-artifacts/                 # Reserved for channel genesis blocks / configtx outputs (channel bootstrap step)
+├── channel-artifacts/                 # Genesis block(s), fetched config blocks — see Step 2 below
 ├── scripts/ca-bootstrap/
 │   ├── 01-enroll-bootstrap-admin.sh   # Enrolls the CA's built-in bootstrap identity (admin:adminpw)
 │   ├── 02-register-enroll-org-admins.sh  # Registers + enrolls tws-org-admin (TWSOrgMSP) and tws-orderer-admin (TWSOrdererMSP)
 │   ├── 03-register-enroll-nodes.sh    # Registers + enrolls orderer0-3 and peer0-1 (MSP + TLS certs each)
-│   └── 04-copy-admincerts-to-nodes.sh # Copies admin certs into each node's admincerts/ (required for NodeOUs to resolve admin rights)
+│   ├── 04-copy-admincerts-to-nodes.sh # Copies admin certs into each node's admincerts/ (required for NodeOUs to resolve admin rights)
+│   ├── 05-provision-org-msp-cacerts.sh   # Populates ORG-level msp/cacerts/ + msp/tlscacerts/ + config.yaml (required for configtxgen AND orderer cluster TLS trust — see Step 2 below)
+│   └── 06-rotate-bootstrap-admin.sh   # Rotates/retires the CA bootstrap admin (admin:adminpw) — DONE, see Bootstrap Admin Rotation section
 └── Docs/
     ├── Config-and-Progress.md         # This file
     ├── RootResolver-Network-Planning.md
@@ -70,7 +75,7 @@ rwrrn/
 
 ## How to Run the Bootstrap Scripts (reference table)
 
-**Golden rule**: scripts that call `fabric-ca-client` (01–03) run inside the `cli` container. The one script that only copies files on the filesystem (04) runs directly on the VPS host. None of these scripts run automatically as part of `deploy.yml` — they are always triggered manually via SSH, on purpose, so that crypto-material generation never happens as a side effect of a routine `git push`.
+**Golden rule**: scripts that call `fabric-ca-client` (01–03) run inside the `cli` container. Script 04 (plain file copy) and script 05 (org-level MSP provisioning) run inside the `cli` container as well (05 needs the crypto mount, not root on the host). Script 06 (bootstrap admin rotation) runs inside the `cli` container. None of these scripts run automatically as part of `deploy.yml` — they are always triggered manually via SSH, on purpose, so that crypto-material generation never happens as a side effect of a routine `git push`.
 
 | Script | Runs where | Command | Idempotent? |
 |--------|-----------|---------|-------------|
@@ -78,8 +83,10 @@ rwrrn/
 | `02-register-enroll-org-admins.sh` | Inside `cli` container | same pattern, script `02-...` | Yes — skips per-identity if already enrolled |
 | `03-register-enroll-nodes.sh` | Inside `cli` container | same pattern, script `03-...` | Yes — skips per-node/per-cert-type if all 3 files (server.crt/server.key/ca.crt or msp/signcerts) already exist |
 | `04-copy-admincerts-to-nodes.sh` | Directly on VPS host (needs `sudo` — crypto-config files are root-owned) | `cd /opt/rwrrn && sudo bash scripts/ca-bootstrap/04-copy-admincerts-to-nodes.sh` | Yes — skips per-node if admincert already present |
+| `05-provision-org-msp-cacerts.sh` | Inside `cli` container | same pattern, script `05-...` | Yes — skips cacerts/tlscacerts/config.yaml individually if already present |
+| `06-rotate-bootstrap-admin.sh` | Inside `cli` container | same pattern, script `06-...` | Yes — see Bootstrap Admin Rotation section; **DONE, executed 2026-09-03** |
 
-**Required order**: 01 → 02 → 03 → 04, always in this sequence, because each step's registrar identity depends on the previous step's output (bootstrap admin registers the org admins; org admins register the node identities).
+**Required order**: 01 → 02 → 03 → 04 → 05 → 06, in this sequence for a first-time bootstrap. 05 must run, and its resulting org-level `msp/cacerts/` + `msp/tlscacerts/` must be in place, **before** `configtxgen` generates any genesis/channel block that will actually be distributed to orderers (see Step 2, Bugs Encountered — a block generated before 05's `tlscacerts/` fix had to be discarded and regenerated).
 
 **After running 03 + 04 for any new/changed node**: start that one node with `docker compose up -d <service>` and check `docker compose logs <service> --tail=30` before starting the next one. Never start all nodes at once after a crypto-material change — this keeps failures isolated to one node at a time.
 
@@ -142,7 +149,7 @@ Inbound ports needed on the TWS VPS: **7050-7054, 7150-7153, 7250-7253, 7350-735
 Summary of what was built, in order:
 
 1. **CA server configured with correct TLS SAN** (`FABRIC_CA_SERVER_CSR_HOSTS=ca.tws.rwrrn.recordweb.dev,localhost`) — the CA's auto-generated TLS certificate initially only covered `localhost` and its container ID, causing `fabric-ca-client enroll` to fail with a hostname-verification error. Fixed by wiping the auto-generated CA state (`fabric-ca/tws/*`) and restarting with the CSR host env var set, so the CA regenerates its root identity and TLS cert correctly on first boot.
-2. **Bootstrap admin enrolled** (`01-enroll-bootstrap-admin.sh`) — the CA's built-in `admin:adminpw` identity (set via `fabric-ca-server start -b admin:adminpw`) enrolled as a Fabric CA client, producing a local MSP used only to register the real org admins in the next step. This bootstrap identity is intentionally never used directly by any node — see Bootstrap Admin Rotation below for why and how it will eventually be retired.
+2. **Bootstrap admin enrolled** (`01-enroll-bootstrap-admin.sh`) — the CA's built-in `admin:adminpw` identity (set via `fabric-ca-server start -b admin:adminpw`) enrolled as a Fabric CA client, producing a local MSP used only to register the real org admins in the next step. This bootstrap identity is intentionally never used directly by any node — see Bootstrap Admin Rotation below for why and how it was retired.
 3. **Two named org admins registered + enrolled** (`02-register-enroll-org-admins.sh`): `tws-org-admin` (MSP `TWSOrgMSP`, registrar for peer identities) and `tws-orderer-admin` (MSP `TWSOrdererMSP`, registrar for orderer identities) — see Decision D1 for why two separate admins/MSPs instead of one shared `OrdererMSP`.
 4. **All 6 node identities registered + enrolled** (`03-register-enroll-nodes.sh`): `orderer0`-`orderer3` (registrar: `tws-orderer-admin`) and `peer0`/`peer1` (registrar: `tws-org-admin`). Each node gets both an MSP (signing) certificate and a separate TLS certificate (`--enrollment.profile tls`), laid out exactly as `docker-compose.yml`'s volume mounts expect.
 5. **Admin certificates copied into each node's `admincerts/`** (`04-copy-admincerts-to-nodes.sh`) — required because Fabric's NodeOUs mechanism still needs at least one admin certificate physically present in each node's local MSP folder to resolve "who is an admin of this MSP" at node startup, even with `NodeOUs.Enable: true` configured.
@@ -161,22 +168,17 @@ Summary of what was built, in order:
 
 ---
 
-## Bootstrap Admin Rotation (why it matters, not yet done)
+## Bootstrap Admin Rotation (DONE — 2026-09-03)
 
-**Status: OPEN — not yet performed.**
+**Status: COMPLETE.** Executed via `06-rotate-bootstrap-admin.sh` on 2026-09-03, after Stage 1 Step 2 (channel bootstrap) completed successfully.
 
-The Fabric CA was started with a hardcoded bootstrap identity, `admin:adminpw` (see `docker-compose.yml`, `command: sh -c 'fabric-ca-server start -b admin:adminpw -d'`). This identity currently still exists and is still valid.
+The Fabric CA was originally started with a hardcoded bootstrap identity, `admin:adminpw` (see `docker-compose.yml`, `command: sh -c 'fabric-ca-server start -b admin:adminpw -d'`). This identity was rotated/retired because:
 
-**Why this needs to be rotated/retired**, per `RootResolver-Network-Planning.md` Section 4.6 ("Bootstrap credentials are then rotated/retired"):
+- `admin:adminpw` is a well-known, publicly documented default used across virtually every Fabric tutorial and reference deployment. Anyone who could reach `ca.tws.rwrrn.recordweb.dev:7054` and knew this convention could attempt to authenticate as this identity.
+- This bootstrap identity had full registrar rights (it was used to register `tws-org-admin` and `tws-orderer-admin`) — leaving it active indefinitely would have left the CA's registrar capability tied to a well-known default credential.
+- The two named admins (`tws-org-admin`, `tws-orderer-admin`) already had the same registrar capabilities the bootstrap identity was only ever meant to provide temporarily, and were confirmed working well before rotation.
 
-- `admin:adminpw` is a well-known, publicly documented default used across virtually every Fabric tutorial and reference deployment. Anyone who can reach `ca.tws.rwrrn.recordweb.dev:7054` and knows this convention can attempt to authenticate as this identity.
-- This bootstrap identity currently has full registrar rights (it was used to register `tws-org-admin` and `tws-orderer-admin`) — if it remains active and its password is ever guessed or leaked, an attacker could register arbitrary new identities against the TWS CA, undermining the entire trust model of the organisation's MSP.
-- The two named admins (`tws-org-admin`, `tws-orderer-admin`) already exist and have the same registrar capabilities the bootstrap identity was only ever meant to provide temporarily. There is no further operational need for `admin:adminpw` once these two are confirmed working (which they are, as of Stage 1 Step 1.4 completion).
-
-**What rotation/retirement will involve** (to be executed as a discrete next step, not bundled with other changes):
-1. Change the bootstrap identity's password via the CA (`fabric-ca-client identity update admin --id.secret <new-strong-secret>`), or disable it entirely if the CA server supports starting without re-registering a bootstrap identity on restart.
-2. Update `docker-compose.yml`'s `command:` line accordingly (or remove the `-b` flag if rotation makes it unnecessary going forward).
-3. Verify `tws-org-admin`/`tws-orderer-admin` can still register new identities independently of the bootstrap identity (they should — registrar rights were granted at their own registration, not inherited dynamically from the bootstrap admin).
+The bootstrap admin's secret has been rotated to a new, strong, non-default value (recorded outside this repository, per `.env` conventions — never committed). `tws-org-admin`/`tws-orderer-admin` continue to register new identities independently, unaffected by the rotation.
 
 ---
 
@@ -192,17 +194,45 @@ Blocked on: MC and NB infrastructure clarification (parked per `RootResolver-Net
 
 ---
 
+## Stage 1 — Step 2: Channel Bootstrap (SmartBFT) — DONE (2026-09-03)
+
+**Status: COMPLETE AND VERIFIED.** The application channel `root-resolver-test` (see Decision D9 for naming) is live across all 6 TWS nodes: orderer0-orderer3 (all `status: active`, SmartBFT cluster communicating with all 4 subchannels `READY`, view-leader elected) and peer0/peer1 (both joined, both report identical `height:1` / `currentBlockHash`, matching AnchorPeer configuration verified in the live channel config).
+
+### What was built, in order
+
+1. **`configtx.yaml` created** at the repo root, defining `TWSOrdererOrg` (MSP `TWSOrdererMSP`, `OrdererEndpoints` for all 4 orderers) and `TWSOrg` (MSP `TWSOrgMSP`, `AnchorPeers: peer0`), `OrdererType: BFT`, a full `ConsenterMapping` (4 entries: Identity = node MSP signcert, ClientTLSCert = ServerTLSCert = node TLS server.crt), and a single profile `RootResolverTestApplicationGenesis` (no system channel — Fabric 3.x application channels bootstrap directly).
+2. **Genesis/application-channel block generated** via `configtxgen -profile RootResolverTestApplicationGenesis -channelID root-resolver-test -outputBlock ...` from inside the `cli` container.
+3. **Channel created on all 4 orderers** via the Channel Participation API (`osnadmin channel join`), each confirmed `Status: 201` / `"status": "active"`.
+4. **Verified SmartBFT cluster communication** between all 4 orderers via `docker compose logs` (subchannels to all peers `READY`, `SmartBFT-v3 is now servicing chain`, view-leader elected) — this required a fix and a full channel-recreate cycle, see Bugs Encountered below.
+5. **peer0 and peer1 joined the channel** via `peer channel join -b <block>`, both confirmed via `peer channel list` and `peer channel getinfo` (`height:1`, identical block hash on both peers).
+6. **AnchorPeer verified** in the live channel config (fetched via `peer channel fetch config` + `configtxlator proto_decode`): `TWSOrgMSP.AnchorPeers` correctly shows `peer0.tws.rwrrn.recordweb.dev:7051`.
+7. **Endorsement policy**: left at the channel-wide default set in `configtx.yaml` (`Application.Policies.Endorsement: MAJORITY Endorsement`, resolving to `OR('TWSOrgMSP.peer')`). Chaincode-specific endorsement policies (via lifecycle `--signature-policy`) are deferred to a future chaincode-focused session — no chaincode is installed yet.
+
+### Bugs encountered and fixed during Step 2 (kept here for future organisations following this same path — MC/NB will hit the same issues)
+
+- **Multi-document YAML silently hides content**: an early draft of `configtx.yaml` used `---` document separators between top-level sections (`Organizations`, `Capabilities`, `Application`, `Orderer`, `Channel`, `Profiles`). `configtxgen`'s Viper-based loader only reads the **first** YAML document in a multi-document stream, so everything after the first `---` (including the `Profiles` section itself) was invisible to the tool — surfacing as `Could not find profile: ...` even though the profile was clearly present in the file. **Fix**: the entire file must be a single YAML document; never use `---` separators in `configtx.yaml`.
+- **Global `Orderer.Addresses` incompatible with Channel capability V3_0**: `configtxgen` rejected a config with both a global `Orderer.Addresses` list and per-org `OrdererEndpoints` set, with `global orderer endpoints exist, but can not be used with V3_0 capability`. **Fix**: remove the global `Addresses:` list entirely; rely exclusively on each orderer org's `OrdererEndpoints`.
+- **`Consortiums: {}` no longer valid in Fabric v3.x profiles**: left over from pre-v3 examples; Fabric 3.x has no system channel, so `configtxgen` emits `Warning: 'Consortiums' should be nil since system channel is no longer supported in Fabric v3.x`. **Fix**: remove `Consortiums:` from the profile entirely (harmless as a warning, but removed for cleanliness).
+- **Org-level MSP missing `msp/cacerts/`**: `configtxgen` failed with `could not load a valid ca certificate from directory .../msp/cacerts: stat ...: no such file or directory`. Steps 01-04 only ever populated **node**-level and **admin**-level MSPs; nobody had populated the **organisation**-level `MSPDir` referenced directly by `configtx.yaml`'s `Organizations[].MSPDir`, because a live Fabric CA (unlike `cryptogen`) never creates this directory automatically. **Fix**: new script `05-provision-org-msp-cacerts.sh` (see Repository Layout), which copies the CA root cert (already present in any enrolled node's `msp/cacerts/`) into both `ordererOrganizations/.../msp/cacerts/` and `peerOrganizations/.../msp/cacerts/`, plus writes the matching NodeOUs `config.yaml` at the org level.
+- **Org-level MSP also missing `msp/tlscacerts/` — orderer cluster TLS fails even though `configtxgen` succeeds**: after fixing `cacerts/` above, `configtxgen` ran fine and all 4 orderers individually joined the channel (`osnadmin` returned `201`/`active` for each). However, `docker compose logs` on any orderer showed a continuous stream of `server root CA cert is nil` (from `orderer/common/cluster/connectionsmgr.go`) and `tls: bad certificate` — the SmartBFT consenters could not open gRPC connections to each other. Root cause, confirmed by inspecting Fabric's source (`orderer/common/cluster/util.go`): the cluster layer derives each org's `ServerRootCAs` via `msp.GetTLSRootCerts()`, which reads **only** `msp/tlscacerts/`, never `msp/cacerts/` — a completely different directory from the one `configtxgen` needs. **Fix**: extended `05-provision-org-msp-cacerts.sh` to also populate `msp/tlscacerts/` at the org level (same source `.pem`, since this CA has no separate TLS sub-CA). **Important consequence**: because the *already-generated and already-distributed* genesis block had the org MSP baked in *without* `tlscacerts/`, fixing the files on disk was not enough — the channel had to be fully removed from all 4 orderers (`osnadmin channel remove`), the block regenerated, and all 4 orderers rejoined, before the cluster TLS fix took effect. **Takeaway for MC/NB**: always run `05-provision-org-msp-cacerts.sh` to completion (with both `cacerts/` and `tlscacerts/` populated) *before* generating the block that will actually be distributed — regenerating after the fact requires a full channel remove/rejoin cycle.
+- **`Orderer.Capabilities: V3_0` does not exist**: `osnadmin channel join` failed on the very first attempt with `Orderer capability V3_0 is required but not supported`, despite all orderer binaries confirmed running `v3.1.5` (verified via `orderer version` and `configtxgen --version` — no version mismatch). Root cause, confirmed by inspecting Fabric's source (`common/capabilities/orderer.go`): the highest defined Orderer-capability constant is `OrdererV2_0 = "V2_0"` — there is no `OrdererV3_0`. **Fix**: set `Orderer.Capabilities: V2_0`, not `V3_0`. Only the **Channel**-level capability needs to be `V3_0` to enable BFT.
+- **`Application.Capabilities: V3_0` does not exist either — same mistake, different capability group**: after fixing the Orderer capability and successfully rejoining all 4 orderers, `peer channel join` failed with `Application capability V3_0 is required but not supported`. Root cause, confirmed the same way (`common/capabilities/application.go`): the highest defined Application-capability constant is `ApplicationV2_5` — there is no `ApplicationV3_0`. **Fix**: set `Application.Capabilities: V2_5`. This required a second full channel remove/regenerate/rejoin cycle (see Decision D10 for the generalised rule this produced).
+- **Relative crypto-material paths fail for any peer other than the `cli` container's configured default (`peer0`)**: commands like `peer channel join` or `peer channel fetch config` work with **relative** paths (e.g. `crypto/peerOrganizations/.../ca.crt`) only when using the `cli` service's built-in default `CORE_PEER_*` environment (which points at `peer0`, using **absolute** paths baked into `docker-compose.yml`). As soon as any command overrides `CORE_PEER_ADDRESS`/`CORE_PEER_TLS_*` to target `peer1` (or fetches from an orderer) using a **relative** path for the TLS file, it fails with `open /etc/hyperledger/fabric/crypto/...: no such file or directory` — a different, wrong base directory is used for relative-path resolution in that code path. **Fix**: always use the **full absolute path** (`/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/...`) for any `CORE_PEER_TLS_*`/`--cafile`/`--client-cert`/`--client-key` argument passed as an override inside the `cli` container — never rely on relative paths outside of the container's own baked-in defaults.
+
+---
+
 ## Open Items Carried Forward
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Bootstrap admin (`admin:adminpw`) rotation/retirement | Open — see dedicated section above |
-| 2 | Channel bootstrap (genesis block, `OrdererType: BFT`, `ConsenterMapping` for all 4 orderers, channel creation, peer join) | Open — next major step |
+| 1 | Bootstrap admin (`admin:adminpw`) rotation/retirement | **DONE — 2026-09-03**, see Bootstrap Admin Rotation section |
+| 2 | Channel bootstrap (genesis block, `OrdererType: BFT`, `ConsenterMapping` for all 4 orderers, channel creation, peer join) | **DONE — 2026-09-03**, see Stage 1 Step 2 section |
 | 3 | Confirm whether `root-resolver-testnet` and the new Stage 1 TWS network run simultaneously on the same VPS; resolve any operations-port collision risk | Open |
 | 4 | Reconcile `recordweb.org` already used by the existing testnet's `RecordWebOrg` peer org vs. the plan to register `recordweb.org` for the association (Stage 2) | Open |
 | 5 | Whether MC/NB also need 4 orderers each for Stage 3 (see Stage 3 section above) | Open |
 | 6 | IPv6 (AAAA) records for TWS nodes | Deferred, not urgent |
 | 7 | MC / NB infrastructure | Parked |
+| 8 | Chaincode-specific endorsement policy (lifecycle `--signature-policy`) | Deferred to a future chaincode-focused session |
 
 ---
 
@@ -210,3 +240,4 @@ Blocked on: MC and NB infrastructure clarification (parked per `RootResolver-Net
 
 - 2026-09-02: Document created. Stage numbering, DNS records (Step 1.1), port scheme v1 (Step 1.2, 2 orderers), CA-vs-cryptogen decision pending.
 - 2026-09-03: Stage 1 Step 1.4 completed — full crypto-material bootstrap (CA TLS fix, bootstrap admin, two named org admins under Model B MSP split, all node identities, admincerts). Fabric version decision changed from 2.5 LTS to 3.1.x. Consensus decision changed from Raft to SmartBFT, requiring TWS's orderer count to increase from 2 to 4. Port scheme revised (Step 1.2) to a flat +100-per-orderer offset, superseding the original 2-orderer scheme. Custom `rwrrn-fabric-tools` image built to replace the discontinued `hyperledger/fabric-tools` Docker Hub image and to consolidate all CA-client/channel-bootstrap tooling in one place. All 8 services (CA, orderer0-3, peer0-1, cli) confirmed running stably on Fabric 3.1.5. Documented all bugs encountered during this build for reuse by MC/NB. Flagged bootstrap-admin rotation as an open item with rationale. Channel bootstrap (BFT `configtx`, genesis block, channel creation) identified as the next major step.
+- 2026-09-03 (later): Stage 1 Step 2 (Channel Bootstrap, SmartBFT) completed and verified — `configtx.yaml` created and iterated through 5 real bugs (multi-document YAML, global vs. per-org orderer endpoints, obsolete `Consortiums`, missing org-level `cacerts/`, missing org-level `tlscacerts/`, non-existent `OrdererV3_0`/`ApplicationV3_0` capabilities), each documented above for MC/NB. New script `05-provision-org-msp-cacerts.sh` added to the bootstrap sequence. Channel `root-resolver-test` live across all 4 orderers (SmartBFT cluster confirmed communicating) and both peers (joined, synced, AnchorPeer verified). Bootstrap admin rotation (`06-rotate-bootstrap-admin.sh`) executed and marked done. Decision D9 (test channel name) and D10 (capability ceilings per group) added. Chaincode-specific endorsement policy deferred to a future session.
