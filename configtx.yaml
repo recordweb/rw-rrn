@@ -1,0 +1,203 @@
+# configtx.yaml — RWRRN Stage 1 (TWS only), SmartBFT test channel
+#
+# Channel name for this bootstrap: root-resolver-test
+# Consensus: SmartBFT, 4 consenters (orderer0-orderer3), TWSOrdererMSP
+# Peer org: TWSOrgMSP (peer0, peer1)
+# Channel capability: V3_0 (required for BFT — see Fabric docs "the V3.0 flag must be set to true")
+#
+# Paths below are relative to the cli container's working_dir
+# (/opt/gopath/src/github.com/hyperledger/fabric/peer), matching the
+# ./crypto-config -> crypto volume mount in docker-compose.yml.
+#
+# Run configtxgen from inside the cli container with:
+#   FABRIC_CFG_PATH=/opt/gopath/src/github.com/hyperledger/fabric/peer configtxgen ...
+# (or simply place this file at the working_dir root, which is what we do here)
+
+---
+Organizations:
+
+  - &TWSOrdererOrg
+    Name: TWSOrdererMSP
+    ID: TWSOrdererMSP
+    MSPDir: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('TWSOrdererMSP.member')"
+      Writers:
+        Type: Signature
+        Rule: "OR('TWSOrdererMSP.member')"
+      Admins:
+        Type: Signature
+        Rule: "OR('TWSOrdererMSP.admin')"
+    OrdererEndpoints:
+      - orderer0.tws.rwrrn.recordweb.dev:7050
+      - orderer1.tws.rwrrn.recordweb.dev:7150
+      - orderer2.tws.rwrrn.recordweb.dev:7250
+      - orderer3.tws.rwrrn.recordweb.dev:7350
+
+  - &TWSOrg
+    Name: TWSOrgMSP
+    ID: TWSOrgMSP
+    MSPDir: crypto/peerOrganizations/tws.rwrrn.recordweb.dev/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('TWSOrgMSP.admin', 'TWSOrgMSP.peer', 'TWSOrgMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('TWSOrgMSP.admin', 'TWSOrgMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('TWSOrgMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('TWSOrgMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.tws.rwrrn.recordweb.dev
+        Port: 7051
+
+---
+Capabilities:
+  Channel: &ChannelCapabilities
+    V3_0: true
+  Orderer: &OrdererCapabilities
+    V3_0: true
+  Application: &ApplicationCapabilities
+    V3_0: true
+
+---
+Application: &ApplicationDefaults
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    # Application-level default endorsement policy — Step 2.9 sets/overrides
+    # this per-chaincode via the lifecycle endorsement policy at commit time.
+    # Kept here as the channel-wide fallback default.
+    Endorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+  Capabilities:
+    <<: *ApplicationCapabilities
+
+---
+Orderer: &OrdererDefaults
+  OrdererType: BFT
+  SmartBFT:
+    # Protocol-level defaults; fine to leave at Fabric's built-in defaults for a test channel.
+    RequestBatchMaxCount: 100
+    RequestBatchMaxBytes: 10485760
+    RequestBatchMaxInterval: 200ms
+    IncomingMessageBufferSize: 200
+    RequestPoolSize: 400
+    RequestForwardTimeout: 2s
+    RequestComplainTimeout: 20s
+    RequestAutoRemoveTimeout: 3m
+    ViewChangeResendInterval: 5s
+    ViewChangeTimeout: 20s
+    LeaderHeartbeatTimeout: 1m
+    LeaderHeartbeatCount: 10
+    CollectTimeout: 1s
+  Addresses:
+    - orderer0.tws.rwrrn.recordweb.dev:7050
+    - orderer1.tws.rwrrn.recordweb.dev:7150
+    - orderer2.tws.rwrrn.recordweb.dev:7250
+    - orderer3.tws.rwrrn.recordweb.dev:7350
+  BatchTimeout: 2s
+  BatchSize:
+    MaxMessageCount: 100
+    AbsoluteMaxBytes: 10 MB
+    PreferredMaxBytes: 2 MB
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    BlockValidation:
+      # For BFT this is derived/overridden by configtxgen from ConsenterMapping —
+      # left here as the conventional placeholder; do not hand-edit for BFT profiles.
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+  ConsenterMapping:
+    - ID: 1
+      Host: orderer0.tws.rwrrn.recordweb.dev
+      Port: 7050
+      MSPID: TWSOrdererMSP
+      Identity: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer0.tws.rwrrn.recordweb.dev/msp/signcerts/cert.pem
+      ClientTLSCert: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer0.tws.rwrrn.recordweb.dev/tls/server.crt
+      ServerTLSCert: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer0.tws.rwrrn.recordweb.dev/tls/server.crt
+    - ID: 2
+      Host: orderer1.tws.rwrrn.recordweb.dev
+      Port: 7150
+      MSPID: TWSOrdererMSP
+      Identity: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer1.tws.rwrrn.recordweb.dev/msp/signcerts/cert.pem
+      ClientTLSCert: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer1.tws.rwrrn.recordweb.dev/tls/server.crt
+      ServerTLSCert: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer1.tws.rwrrn.recordweb.dev/tls/server.crt
+    - ID: 3
+      Host: orderer2.tws.rwrrn.recordweb.dev
+      Port: 7250
+      MSPID: TWSOrdererMSP
+      Identity: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer2.tws.rwrrn.recordweb.dev/msp/signcerts/cert.pem
+      ClientTLSCert: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer2.tws.rwrrn.recordweb.dev/tls/server.crt
+      ServerTLSCert: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer2.tws.rwrrn.recordweb.dev/tls/server.crt
+    - ID: 4
+      Host: orderer3.tws.rwrrn.recordweb.dev
+      Port: 7350
+      MSPID: TWSOrdererMSP
+      Identity: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer3.tws.rwrrn.recordweb.dev/msp/signcerts/cert.pem
+      ClientTLSCert: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer3.tws.rwrrn.recordweb.dev/tls/server.crt
+      ServerTLSCert: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer3.tws.rwrrn.recordweb.dev/tls/server.crt
+  Capabilities:
+    <<: *OrdererCapabilities
+
+---
+Channel: &ChannelDefaults
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+  Capabilities:
+    <<: *ChannelCapabilities
+
+---
+Profiles:
+
+  # Used only to generate the application-channel *create* transaction / genesis
+  # block for the Channel Participation API (osnadmin), not a system-channel
+  # genesis block — Fabric 3.x application channels are bootstrapped directly,
+  # there is no system channel.
+  RootResolverTestApplicationGenesis:
+    <<: *ChannelDefaults
+    Orderer:
+      <<: *OrdererDefaults
+      Organizations:
+        - *TWSOrdererOrg
+      Capabilities:
+        <<: *OrdererCapabilities
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - *TWSOrg
+      Capabilities:
+        <<: *ApplicationCapabilities
+    Consortiums: {}
