@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# scripts/ca-bootstrap/05-rotate-bootstrap-admin.sh
+# scripts/ca-bootstrap/06-rotate-bootstrap-admin.sh
 # =============================================================================
 # Step 5 of the RWRRN crypto-material bootstrap sequence.
 #
@@ -48,7 +48,7 @@
 #
 # HOW TO RUN:
 #   docker compose exec cli bash
-#   bash scripts/ca-bootstrap/05-rotate-bootstrap-admin.sh
+#   bash scripts/ca-bootstrap/06-rotate-bootstrap-admin.sh
 #
 # PREREQUISITE:
 #   Steps 1-4 completed successfully (bootstrap admin, both org admins, all
