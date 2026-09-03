@@ -3,16 +3,29 @@
 # Channel name for this bootstrap: root-resolver-test
 # Consensus: SmartBFT, 4 consenters (orderer0-orderer3), TWSOrdererMSP
 # Peer org: TWSOrgMSP (peer0, peer1)
-# Channel capability: V3_0 (required for BFT — see Fabric docs "the V3.0 flag must be set to true")
+# Channel capability: V3_0 (required for BFT)
 #
 # Paths below are relative to the cli container's working_dir
 # (/opt/gopath/src/github.com/hyperledger/fabric/peer), matching the
 # ./crypto-config -> crypto volume mount in docker-compose.yml.
 #
-# Run configtxgen from inside the cli container with:
-#   FABRIC_CFG_PATH=/opt/gopath/src/github.com/hyperledger/fabric/peer configtxgen ...
-# (or simply place this file at the working_dir root, which is what we do here)
+# IMPORTANT #1: this file is a SINGLE YAML document. Do not add "---"
+# document separators between top-level sections — configtxgen's
+# Viper-based loader only reads the first YAML document in a
+# multi-document file, silently hiding everything after the first "---"
+# (hit and fixed 2026-09-03).
+#
+# IMPORTANT #2: with Channel capability V3_0, orderer endpoints must be
+# defined ONLY at the organization level (OrdererEndpoints: under each
+# orderer org in Organizations:). Do NOT also set a global Orderer.Addresses
+# list — configtxgen rejects that combination with:
+#   "global orderer endpoints exist, but can not be used with V3_0
+#   capability" (hit and fixed 2026-09-03; see Fabric docs
+#   "Considerations for getting to v3.x" / OrdererEndpoints deprecation
+#   of global Orderer.Addresses since v1.4.2, enforced strictly at V3_0).
+
 Organizations:
+
   - &TWSOrdererOrg
     Name: TWSOrdererMSP
     ID: TWSOrdererMSP
@@ -32,6 +45,7 @@ Organizations:
       - orderer1.tws.rwrrn.recordweb.dev:7150
       - orderer2.tws.rwrrn.recordweb.dev:7250
       - orderer3.tws.rwrrn.recordweb.dev:7350
+
   - &TWSOrg
     Name: TWSOrgMSP
     ID: TWSOrgMSP
@@ -52,6 +66,7 @@ Organizations:
     AnchorPeers:
       - Host: peer0.tws.rwrrn.recordweb.dev
         Port: 7051
+
 Capabilities:
   Channel: &ChannelCapabilities
     V3_0: true
@@ -59,6 +74,7 @@ Capabilities:
     V3_0: true
   Application: &ApplicationCapabilities
     V3_0: true
+
 Application: &ApplicationDefaults
   Organizations:
   Policies:
@@ -71,18 +87,15 @@ Application: &ApplicationDefaults
     Admins:
       Type: ImplicitMeta
       Rule: "MAJORITY Admins"
-    # Application-level default endorsement policy — Step 2.9 sets/overrides
-    # this per-chaincode via the lifecycle endorsement policy at commit time.
-    # Kept here as the channel-wide fallback default.
     Endorsement:
       Type: ImplicitMeta
       Rule: "MAJORITY Endorsement"
   Capabilities:
     <<: *ApplicationCapabilities
+
 Orderer: &OrdererDefaults
   OrdererType: BFT
   SmartBFT:
-    # Protocol-level defaults; fine to leave at Fabric's built-in defaults for a test channel.
     RequestBatchMaxCount: 100
     RequestBatchMaxBytes: 10485760
     RequestBatchMaxInterval: 200ms
@@ -96,11 +109,9 @@ Orderer: &OrdererDefaults
     LeaderHeartbeatTimeout: 1m
     LeaderHeartbeatCount: 10
     CollectTimeout: 1s
-  Addresses:
-    - orderer0.tws.rwrrn.recordweb.dev:7050
-    - orderer1.tws.rwrrn.recordweb.dev:7150
-    - orderer2.tws.rwrrn.recordweb.dev:7250
-    - orderer3.tws.rwrrn.recordweb.dev:7350
+  # NOTE: no global "Addresses:" list here — with V3_0 capability, orderer
+  # endpoints come exclusively from each org's OrdererEndpoints (above) and
+  # from ConsenterMapping (below). See IMPORTANT #2 note at file top.
   BatchTimeout: 2s
   BatchSize:
     MaxMessageCount: 100
@@ -118,8 +129,6 @@ Orderer: &OrdererDefaults
       Type: ImplicitMeta
       Rule: "MAJORITY Admins"
     BlockValidation:
-      # For BFT this is derived/overridden by configtxgen from ConsenterMapping —
-      # left here as the conventional placeholder; do not hand-edit for BFT profiles.
       Type: ImplicitMeta
       Rule: "ANY Writers"
   ConsenterMapping:
@@ -153,6 +162,7 @@ Orderer: &OrdererDefaults
       ServerTLSCert: crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer3.tws.rwrrn.recordweb.dev/tls/server.crt
   Capabilities:
     <<: *OrdererCapabilities
+
 Channel: &ChannelDefaults
   Policies:
     Readers:
@@ -166,11 +176,9 @@ Channel: &ChannelDefaults
       Rule: "MAJORITY Admins"
   Capabilities:
     <<: *ChannelCapabilities
+
 Profiles:
-  # Used only to generate the application-channel *create* transaction / genesis
-  # block for the Channel Participation API (osnadmin), not a system-channel
-  # genesis block — Fabric 3.x application channels are bootstrapped directly,
-  # there is no system channel.
+
   RootResolverTestApplicationGenesis:
     <<: *ChannelDefaults
     Orderer:
