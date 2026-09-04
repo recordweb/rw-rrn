@@ -45,7 +45,7 @@
 #   peer0.tws.rwrrn.recordweb.dev    - Peer 0 (7051 peer / 7052 chaincode / 9444 ops)
 #   peer1.tws.rwrrn.recordweb.dev    - Peer 1 (8051 peer / 8052 chaincode / 9445 ops)
 #
-# State database: LevelDB (no CouchDB service - per RootResolver-Network.md Section 4.2)
+# State database: CouchDB service
 # Crypto material: live Fabric CA server (not cryptogen) - per Config-and-Progress.md Step 1.4
 
 networks:
@@ -61,6 +61,8 @@ volumes:
   orderer3_data:
   peer0_data:
   peer1_data:
+  couchdb0_data:
+  couchdb1_data:
 
 services:
 
@@ -227,6 +229,32 @@ services:
     networks:
       - rwrrn_net
 
+  # ── CouchDB for peer0 ────────────────────────────────────────────────────
+  couchdb0:
+    image: couchdb:3.3
+    container_name: couchdb0.tws.rwrrn.recordweb.dev
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD}
+    volumes:
+      - couchdb0_data:/opt/couchdb/data
+    # No host port mapping on purpose — CouchDB has no TLS/auth strong enough
+    # to expose publicly; only peer0 (same docker network) talks to it.
+    networks:
+      - rwrrn_net
+
+  # ── CouchDB for peer1 ────────────────────────────────────────────────────
+  couchdb1:
+    image: couchdb:3.3
+    container_name: couchdb1.tws.rwrrn.recordweb.dev
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=${COUCHDB_PASSWORD}
+    volumes:
+      - couchdb1_data:/opt/couchdb/data
+    networks:
+      - rwrrn_net      
+
   # ── Peer 0 (TWSOrg) ─────────────────────────────────────────────────────────
   peer0.tws.rwrrn.recordweb.dev:
     image: hyperledger/fabric-peer:3.1
@@ -252,7 +280,10 @@ services:
       - CORE_PEER_LOCALMSPID=TWSOrgMSP
       - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
       - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:9444
-      - CORE_LEDGER_STATE_STATEDATABASE=goleveldb
+      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb0:5984
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=${COUCHDB_PASSWORD}
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ./crypto-config/peerOrganizations/tws.rwrrn.recordweb.dev/peers/peer0.tws.rwrrn.recordweb.dev/msp:/etc/hyperledger/fabric/msp
@@ -262,6 +293,8 @@ services:
       - "7051:7051"
     networks:
       - rwrrn_net
+    depends_on:
+      - couchdb0
 
   # ── Peer 1 (TWSOrg) ─────────────────────────────────────────────────────────
   peer1.tws.rwrrn.recordweb.dev:
@@ -288,7 +321,10 @@ services:
       - CORE_PEER_LOCALMSPID=TWSOrgMSP
       - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
       - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:9445
-      - CORE_LEDGER_STATE_STATEDATABASE=goleveldb
+      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb1:5984
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=${COUCHDB_PASSWORD}
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ./crypto-config/peerOrganizations/tws.rwrrn.recordweb.dev/peers/peer1.tws.rwrrn.recordweb.dev/msp:/etc/hyperledger/fabric/msp
@@ -298,6 +334,8 @@ services:
       - "8051:8051"
     networks:
       - rwrrn_net
+    depends_on:
+      - couchdb1
 
   # ── CLI / Admin tools — custom-built image (see fabric-tools/Dockerfile.tools)
   #    Replaces the discontinued hyperledger/fabric-tools Docker Hub image AND
