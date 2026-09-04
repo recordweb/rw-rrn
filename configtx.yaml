@@ -222,7 +222,7 @@ Channel: &ChannelDefaults
 
 Profiles:
 
-  RootResolverTestApplicationGenesis:
+  RwGnrApplicationGenesis:
     <<: *ChannelDefaults
     Orderer:
       <<: *OrdererDefaults
