@@ -172,6 +172,13 @@ The bootstrap admin's secret has been rotated to a new, strong, non-default valu
 
 ### Used commands
 
+#### General
+
+``` bash
+su deploy
+cd /opt/rw-rrn
+```
+
 #### CLI Container restart (if configtx.yaml has changed)
 ``` bash
 docker compose restart cli
