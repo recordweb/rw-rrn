@@ -15,8 +15,12 @@ on:
           - ca.tws.rwrrn.recordweb.dev
           - orderer0.tws.rwrrn.recordweb.dev
           - orderer1.tws.rwrrn.recordweb.dev
+          - orderer2.tws.rwrrn.recordweb.dev
+          - orderer3.tws.rwrrn.recordweb.dev
           - peer0.tws.rwrrn.recordweb.dev
           - peer1.tws.rwrrn.recordweb.dev
+          - couchdb0
+          - couchdb1
           - cli
           - all
 
@@ -32,7 +36,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             set -euo pipefail
-            cd /opt/rwrrn
+            cd /opt/rw-rrn
 
             git -c http.version=HTTP/1.1 fetch origin
             git reset --hard origin/main
