@@ -54,7 +54,7 @@ The pilot uses pseudo-organisations, not the final operating organisation envisi
 
 ### 3.2 Namespace Registration Authority
 
-**Any participating organisation may register namespaces on the `root-resolver` channel without prior approval from the others.** It is using its own Fabric identity as `registeredBy`.
+**Any participating organisation may register namespaces on the global-namespace-registry (gns) `rw-gnr` channel without prior approval from the others.** It is using its own Fabric identity as `registeredBy`.
 
 
 
@@ -152,8 +152,8 @@ The statutes encode the following transformation path, coupling association memb
 
 ### 4.5 Channels
 
-- **Test channel**: `root-resolver-test` channel (infrastructure test and chaincode test).
-- **Production channel**: `root-resolver` channel.
+- **Test channel**: `rw-gnr-test` channel (infrastructure test and chaincode test).
+- **Production channel**: `rw-gnr` channel.
 
 The association's anchor peer is joined to both channels from the start, since its role (discovery) is independent of the test/prod distinction.
 
@@ -188,7 +188,7 @@ The association's anchor peer is joined to both channels from the start, since i
 ## 6. Rollout Plan
 
 1. **Stage 1: Initialisation (TWS only)**: TWS stands up its own CA, 4 orderers, and 2 peers under the `tws.rwrrn.recordweb.dev` naming scheme; single-org test network to validate chaincode logic and operational scripts (CA bootstrap, MSP generation, channel creation, chaincode deployment) end-to-end. Association founding and the association's own bootstrap/discovery organisation (`peer.recordweb.org`) can be set up in parallel or immediately after.
-2. **Stage 2: Pilot (additional non-Gov Orgs)**: additional orgs stand up their node set and join the association; network is extended to >3 organisations plus the association's anchor peer; `root-resolver` and `root-resolver-test` channels are created with all three orgs as members; endorsement policy is activated.
+2. **Stage 2: Pilot (additional non-Gov Orgs)**: additional orgs stand up their node set and join the association; network is extended to >3 organisations plus the association's anchor peer; `rw-gnr` and `rw-gnr-test` channels are created with all three orgs as members; endorsement policy is activated.
 3. **Stage 3: RampUp (first Gov Orgs)**: real governmental organisations (or government-delegated organisations) begin onboarding via the standard admission procedure, typically under their own governmental domain (e.g. `rwrrn.admin.ch`), discoverable via the association's stable `peer.recordweb.org` anchor peer, and joining the association as they join the network.
 4. **Stage 4: Production (no non-Gov Orgs)**: once no non-governmental organisation remains and the association's membership has fully transitioned to governmental/government-delegated organisations, all non-Govs withdraw via the standard withdrawal procedure.
 

@@ -134,7 +134,7 @@ chmod 600 "${OUTPUT_FILE}"
 echo "Bootstrap admin secret rotated."
 echo "New secret written to: ${OUTPUT_FILE}"
 echo "(on the VPS host, this is visible at:"
-echo " /opt/rwrrn/crypto-config/ca-clients/${ORG_CODE}/bootstrap-admin/NEW-SECRET-MOVE-TO-SECRETS-MANAGER.txt )"
+echo " /opt/rw-rrn/crypto-config/ca-clients/${ORG_CODE}/bootstrap-admin/NEW-SECRET-MOVE-TO-SECRETS-MANAGER.txt )"
 
 echo ""
 echo "== Step 5c: verify orderer admin also still works independently =="

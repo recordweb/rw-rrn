@@ -29,7 +29,7 @@
 #     first — never a silent side effect of re-running this script).
 #
 # HOW TO RUN (manually, via SSH on the VPS, NOT via the deploy workflow):
-#   cd /opt/rwrrn
+#   cd /opt/rw-rrn
 #   docker compose exec ca.tws.rwrrn.recordweb.dev bash
 #   bash /etc/hyperledger/scripts/ca-bootstrap/01-enroll-bootstrap-admin.sh
 #

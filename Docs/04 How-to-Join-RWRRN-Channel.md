@@ -1,4 +1,4 @@
-# How to Join the RWRRN Test Channel (`root-resolver-test`)
+# How to Join the RWRRN Test Channel (`rw-gnr-test`)
 
 Audience: a new organisation that wants to join the existing SmartBFT application channel operated by TWS on the RecordWeb RootResolver Network. This document assumes you have already read `Config-and-Progress.md` (especially the Decision Log and Stage 1 Step 2 section) and understand the current network topology.
 
@@ -8,7 +8,7 @@ Audience: a new organisation that wants to join the existing SmartBFT applicatio
 
 If you clone `recordweb/rwrrn` and adapt `.env` + `docker-compose.yml` exactly like TWS did, you get **your own isolated single-org test network** — your own CA, your own orderers, your own peers, all talking only to each other. That is NOT the same as joining TWS's existing channel. Cloning the repo gives you the *tooling and patterns*, not membership in the network.
 
-**To actually join the existing `root-resolver-test` channel, you need:**
+**To actually join the existing `rw-gnr-test` channel, you need:**
 
 1. Your own Fabric CA and your own crypto material (same bootstrap process as TWS — scripts 01-06), because RWRRN's principle is "every organisation runs its own CA and issues its own identities".
 2. Your own orderer node(s) reachable from TWS's orderers over the public network (DNS + open firewall ports — same pattern as TWS's Step 1.1-1.3).
@@ -53,7 +53,7 @@ This is identical in spirit to what TWS did in Stage 1 Steps 1.1-1.4, adapted to
 5. Run script 06 (bootstrap admin rotation) once your named org admins are confirmed working — same rationale as TWS's own rotation.
 6. Verify your own orderer(s)/peer(s) start cleanly, in isolation, with `docker compose logs <service>` — **before** attempting to touch the shared channel. Any TLS/MSP problem is far easier to diagnose in isolation than after joining a live multi-org channel.
 
-At the end of Step A, you have a working, isolated Fabric organisation — but it is not yet part of `root-resolver-test`.
+At the end of Step A, you have a working, isolated Fabric organisation — but it is not yet part of `rw-gnr-test`.
 
 ### Step B — Exchange the material needed for the channel config update
 
@@ -83,12 +83,12 @@ This is the part that is genuinely a coordination step, not a script you run alo
 Once Step C's config update is committed to the channel, your own peer(s) join using the **updated** config block (fetched fresh after the update, not TWS's original genesis block):
 
 ```bash
-peer channel fetch newest channel-artifacts/root-resolver-test_latest.block \
-  -c root-resolver-test \
+peer channel fetch newest channel-artifacts/rw-gnr-test_latest.block \
+  -c rw-gnr-test \
   -o <a-reachable-orderer-host>:<port> \
   --tls --cafile <absolute-path-to-that-orderer-tls-ca.crt>
 
-peer channel join -b channel-artifacts/root-resolver-test_latest.block
+peer channel join -b channel-artifacts/rw-gnr-test_latest.block
 ```
 
 Use **absolute paths** for any `--cafile`/`--client-cert`/`--client-key` argument if you override the `cli` container's default `CORE_PEER_*` target (see Stage 1 Step 2's last "Bugs encountered" entry — relative paths silently resolve against the wrong base directory for any peer other than the `cli` container's built-in default).
@@ -102,16 +102,16 @@ Once you believe you've joined, these are the same checks TWS used to verify its
 ```bash
 # Confirm your peer sees the channel and its current height
 peer channel list
-peer channel getinfo -c root-resolver-test
+peer channel getinfo -c rw-gnr-test
 
 # Confirm your org's AnchorPeer is correctly reflected in the live config
-peer channel fetch config channel-artifacts/root-resolver-test_config.pb \
-  -c root-resolver-test \
+peer channel fetch config channel-artifacts/rw-gnr-test_config.pb \
+  -c rw-gnr-test \
   -o <orderer-host>:<port> \
   --tls --cafile <absolute-path-to-orderer-tls-ca.crt>
-configtxlator proto_decode --input channel-artifacts/root-resolver-test_config.pb \
-  --type common.Block --output channel-artifacts/root-resolver-test_config.json
-grep -A15 "AnchorPeers" channel-artifacts/root-resolver-test_config.json
+configtxlator proto_decode --input channel-artifacts/rw-gnr-test_config.pb \
+  --type common.Block --output channel-artifacts/rw-gnr-test_config.json
+grep -A15 "AnchorPeers" channel-artifacts/rw-gnr-test_config.json
 
 # Confirm your orderer(s) are visible in the consenter set and cluster-healthy
 docker compose logs <your-orderer-service> --tail=30

@@ -22,7 +22,7 @@ These decisions supersede anything stated differently in `RootResolver-Network-P
 |---|----------|-----------|
 | D1 | All CA administration (enroll/register operations) runs from the `cli` service (image `rwrrn-fabric-tools`), not from inside the `ca.tws...` server container. | Cleaner separation of concerns: the CA container stays a pure server; all client-side operations happen from one dedicated admin-tools container. This was an interim workaround (running `fabric-ca-client` inside the CA container) during initial bootstrap, now retired. |
 | D2 | Crypto material is generated via a **live Fabric CA server**, not `cryptogen`. | Required for a network that must support ongoing identity issuance as new node types/operators are added (see `RootResolver-Network-Planning.md` Section 4.6). `cryptogen` only supports a one-time, static crypto-material generation and is unsuitable beyond throwaway test networks. |
-| D3 | Test-channel name: **`root-resolver-test`**, distinct from the eventual production channel name `root-resolver` (reused from the existing `root-resolver-testnet` repo's channel naming). | Keeps the Stage 1 SmartBFT test channel unambiguous and clearly disposable, while signalling its relationship to the eventual production channel. Channel name is valid per Fabric's naming rule (`[a-z][a-z0-9.-]*`, max 249 chars). |
+| D3 | Test-channel name: **`rw-gnr-test`**, distinct from the eventual production channel name `rw-gnr`. | Keeps the Stage 1 SmartBFT test channel unambiguous and clearly disposable, while signalling its relationship to the eventual production channel. Channel name is valid per Fabric's naming rule (`[a-z][a-z0-9.-]*`, max 249 chars). |
 | D4 | Channel capability ceilings differ **per capability group** in Fabric 3.1.5: `Channel` tops out at `V3_0`, but `Orderer` tops out at `V2_0` and `Application` tops out at `V2_5`. There is no `OrdererV3_0` or `ApplicationV3_0` constant in Fabric's source (`common/capabilities/*.go`). | Confirmed by direct source inspection on 2026-09-03 after both were tried and rejected at runtime (see Bugs Encountered, Step 2). BFT itself is activated via `OrdererType: BFT` + `ConsenterMapping`, not via any Orderer/Application capability flag — only the **Channel** capability needs to be `V3_0` for BFT, per the official BFT configuration doc. |
 
 ---
@@ -66,7 +66,7 @@ rwrrn/
 | `01-enroll-bootstrap-admin.sh` | Inside `cli` container | `docker compose exec cli bash` → `bash scripts/ca-bootstrap/01-enroll-bootstrap-admin.sh` | Yes — skips if bootstrap admin MSP already exists |
 | `02-register-enroll-org-admins.sh` | Inside `cli` container | same pattern, script `02-...` | Yes — skips per-identity if already enrolled |
 | `03-register-enroll-nodes.sh` | Inside `cli` container | same pattern, script `03-...` | Yes — skips per-node/per-cert-type if all 3 files (server.crt/server.key/ca.crt or msp/signcerts) already exist |
-| `04-copy-admincerts-to-nodes.sh` | Directly on VPS host (needs `sudo` — crypto-config files are root-owned) | `cd /opt/rwrrn && sudo bash scripts/ca-bootstrap/04-copy-admincerts-to-nodes.sh` | Yes — skips per-node if admincert already present |
+| `04-copy-admincerts-to-nodes.sh` | Directly on VPS host (needs `sudo` — crypto-config files are root-owned) | `cd /opt/rw-rrn && sudo bash scripts/ca-bootstrap/04-copy-admincerts-to-nodes.sh` | Yes — skips per-node if admincert already present |
 | `05-provision-org-msp-cacerts.sh` | Inside `cli` container | same pattern, script `05-...` | Yes — skips cacerts/tlscacerts/config.yaml individually if already present |
 | `06-rotate-bootstrap-admin.sh` | Inside `cli` container | same pattern, script `06-...` | Yes — see Bootstrap Admin Rotation section |
 
@@ -158,12 +158,12 @@ The bootstrap admin's secret has been rotated to a new, strong, non-default valu
 
 ## Stage 1 — Step 2: Channel Bootstrap (SmartBFT) — DONE (2026-09-03)
 
-**Status: COMPLETE AND VERIFIED.** The application channel `root-resolver-test` (see Decision D3 for naming) is live across all 6 TWS nodes: orderer0-orderer3 (all `status: active`, SmartBFT cluster communicating with all 4 subchannels `READY`, view-leader elected) and peer0/peer1 (both joined, both report identical `height:1` / `currentBlockHash`, matching AnchorPeer configuration verified in the live channel config).
+**Status: COMPLETE AND VERIFIED.** The application channel `rw-gnr-test` (see Decision D3 for naming) is live across all 6 TWS nodes: orderer0-orderer3 (all `status: active`, SmartBFT cluster communicating with all 4 subchannels `READY`, view-leader elected) and peer0/peer1 (both joined, both report identical `height:1` / `currentBlockHash`, matching AnchorPeer configuration verified in the live channel config).
 
 ### What was built, in order
 
 1. **`configtx.yaml` created** at the repo root, defining `TWSOrdererOrg` (MSP `TWSOrdererMSP`, `OrdererEndpoints` for all 4 orderers) and `TWSOrg` (MSP `TWSOrgMSP`, `AnchorPeers: peer0`), `OrdererType: BFT`, a full `ConsenterMapping` (4 entries: Identity = node MSP signcert, ClientTLSCert = ServerTLSCert = node TLS server.crt), and a single profile `RootResolverTestApplicationGenesis` (no system channel — Fabric 3.x application channels bootstrap directly).
-2. **Genesis/application-channel block generated** via `configtxgen -profile RootResolverTestApplicationGenesis -channelID root-resolver-test -outputBlock ...` from inside the `cli` container.
+2. **Genesis/application-channel block generated** via `configtxgen -profile RootResolverTestApplicationGenesis -channelID rw-gnr-test -outputBlock ...` from inside the `cli` container.
 3. **Channel created on all 4 orderers** via the Channel Participation API (`osnadmin channel join`), each confirmed `Status: 201` / `"status": "active"`.
 4. **Verified SmartBFT cluster communication** between all 4 orderers via `docker compose logs` (subchannels to all peers `READY`, `SmartBFT-v3 is now servicing chain`, view-leader elected) — this required a fix and a full channel-recreate cycle, see Bugs Encountered below.
 5. **peer0 and peer1 joined the channel** via `peer channel join -b <block>`, both confirmed via `peer channel list` and `peer channel getinfo` (`height:1`, identical block hash on both peers).

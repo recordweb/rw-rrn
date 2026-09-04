@@ -1,6 +1,6 @@
 # configtx.yaml — RWRRN Stage 1 (TWS only), SmartBFT test channel
 #
-# Channel name for this bootstrap: root-resolver-test
+# Channel name for this bootstrap: rw-gnr-test
 # Consensus: SmartBFT, 4 consenters (orderer0-orderer3), TWSOrdererMSP
 # Peer org: TWSOrgMSP (peer0, peer1)
 #

@@ -19,7 +19,7 @@
 #   as root).
 #
 # HOW TO RUN:
-#   cd /opt/rwrrn
+#   cd /opt/rw-rrn
 #   sudo bash scripts/ca-bootstrap/04-copy-admincerts-to-nodes.sh
 #
 # PREREQUISITE:
@@ -28,7 +28,7 @@
 
 set -euo pipefail
 
-ENV_FILE="${ENV_FILE:-/opt/rwrrn/.env}"
+ENV_FILE="${ENV_FILE:-/opt/rw-rrn/.env}"
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "ERROR: .env not found at $ENV_FILE"
   exit 1
@@ -48,7 +48,7 @@ set +a
 : "${PEER0_NAME:?PEER0_NAME not set in .env}"
 : "${PEER1_NAME:?PEER1_NAME not set in .env}"
 
-CRYPTO_ROOT="/opt/rwrrn/crypto-config"
+CRYPTO_ROOT="/opt/rw-rrn/crypto-config"
 ORDERER_ADMIN_CERT="${CRYPTO_ROOT}/ordererOrganizations/${ORG_DOMAIN}/users/${ORDERER_ADMIN_USER}/msp/signcerts/cert.pem"
 ORG_ADMIN_CERT="${CRYPTO_ROOT}/peerOrganizations/${ORG_DOMAIN}/users/${ORG_ADMIN_USER}/msp/signcerts/cert.pem"
 
