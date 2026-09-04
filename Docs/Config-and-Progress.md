@@ -170,6 +170,116 @@ The bootstrap admin's secret has been rotated to a new, strong, non-default valu
 6. **AnchorPeer verified** in the live channel config (fetched via `peer channel fetch config` + `configtxlator proto_decode`): `TWSOrgMSP.AnchorPeers` correctly shows `peer0.tws.rwrrn.recordweb.dev:7051`.
 7. **Endorsement policy**: left at the channel-wide default set in `configtx.yaml` (`Application.Policies.Endorsement: MAJORITY Endorsement`, resolving to `OR('TWSOrgMSP.peer')`). Chaincode-specific endorsement policies (via lifecycle `--signature-policy`) are deferred to a future chaincode-focused session — no chaincode is installed yet.
 
+### Used commands
+
+#### CLI Container restart (if configtx.yaml has changed)
+``` bash
+docker compose restart cli
+```
+
+#### Channel remove
+
+``` bash
+docker compose exec cli bash -c '
+for cfg in \
+  "orderer0.tws.rwrrn.recordweb.dev:7053:orderer0.tws.rwrrn.recordweb.dev" \
+  "orderer1.tws.rwrrn.recordweb.dev:7153:orderer1.tws.rwrrn.recordweb.dev" \
+  "orderer2.tws.rwrrn.recordweb.dev:7253:orderer2.tws.rwrrn.recordweb.dev" \
+  "orderer3.tws.rwrrn.recordweb.dev:7353:orderer3.tws.rwrrn.recordweb.dev" \
+; do
+  IFS=":" read -r host port node <<< "$cfg"
+  echo "=== Removing channel from ${node} ==="
+  osnadmin channel remove \
+    --channelID root-resolver-test \
+    -o "${host}:${port}" \
+    --ca-file "crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/${node}/tls/ca.crt" \
+    --client-cert "crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/${node}/tls/server.crt" \
+    --client-key "crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/${node}/tls/server.key"
+done
+'
+```
+
+#### Genesis-Block and orderer channel join
+
+``` bash
+docker compose exec cli bash -c '
+rm -f channel-artifacts/root-resolver-test.block
+FABRIC_CFG_PATH=/opt/gopath/src/github.com/hyperledger/fabric/peer \
+configtxgen -profile RwGnrApplicationGenesis \
+  -channelID rw-gnr \
+  -outputBlock channel-artifacts/rw-gnr.block \
+  -configPath /opt/gopath/src/github.com/hyperledger/fabric/peer
+echo "CONFIGTXGEN EXIT CODE: $?"
+
+for cfg in \
+  "orderer0.tws.rwrrn.recordweb.dev:7053:orderer0.tws.rwrrn.recordweb.dev" \
+  "orderer1.tws.rwrrn.recordweb.dev:7153:orderer1.tws.rwrrn.recordweb.dev" \
+  "orderer2.tws.rwrrn.recordweb.dev:7253:orderer2.tws.rwrrn.recordweb.dev" \
+  "orderer3.tws.rwrrn.recordweb.dev:7353:orderer3.tws.rwrrn.recordweb.dev" \
+; do
+  IFS=":" read -r host port node <<< "$cfg"
+  echo "=== Joining ${node} ==="
+  osnadmin channel join \
+    --channelID rw-gnr \
+    --config-block channel-artifacts/rw-gnr.block \
+    -o "${host}:${port}" \
+    --ca-file "crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/${node}/tls/ca.crt" \
+    --client-cert "crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/${node}/tls/server.crt" \
+    --client-key "crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/${node}/tls/server.key"
+  echo ""
+done
+'
+```
+
+#### Peer 0 join
+
+``` bash
+docker compose exec cli bash -c '
+peer channel join -b channel-artifacts/rw-gnr.block
+echo "EXIT CODE: $?"
+'
+```
+
+#### Peer 1 joinen
+
+``` bash
+docker compose exec cli bash -c '
+CORE_PEER_ADDRESS=peer1.tws.rwrrn.recordweb.dev:8051 \
+CORE_PEER_TLS_CERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/tws.rwrrn.recordweb.dev/peers/peer1.tws.rwrrn.recordweb.dev/tls/server.crt \
+CORE_PEER_TLS_KEY_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/tws.rwrrn.recordweb.dev/peers/peer1.tws.rwrrn.recordweb.dev/tls/server.key \
+CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/tws.rwrrn.recordweb.dev/peers/peer1.tws.rwrrn.recordweb.dev/tls/ca.crt \
+peer channel join -b channel-artifacts/rw-gnr.block
+echo "EXIT CODE: $?"
+'
+```
+
+#### Verification
+
+``` bash
+docker compose exec cli bash -c '
+peer channel list
+echo "---"
+CORE_PEER_ADDRESS=peer1.tws.rwrrn.recordweb.dev:8051 \
+CORE_PEER_TLS_CERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/tws.rwrrn.recordweb.dev/peers/peer1.tws.rwrrn.recordweb.dev/tls/server.crt \
+CORE_PEER_TLS_KEY_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/tws.rwrrn.recordweb.dev/peers/peer1.tws.rwrrn.recordweb.dev/tls/server.key \
+CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/tws.rwrrn.recordweb.dev/peers/peer1.tws.rwrrn.recordweb.dev/tls/ca.crt \
+peer channel list
+'
+
+docker compose exec cli bash -c '
+peer channel fetch config channel-artifacts/rw-gnr_config_block.pb \
+  -c rw-gnr \
+  -o orderer0.tws.rwrrn.recordweb.dev:7050 \
+  --tls --cafile /opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/tws.rwrrn.recordweb.dev/orderers/orderer0.tws.rwrrn.recordweb.dev/tls/ca.crt
+echo "FETCH EXIT CODE: $?"
+echo ""
+configtxlator proto_decode --input channel-artifacts/rw-gnr_config_block.pb --type common.Block --output channel-artifacts/rw-gnr_config_block.json
+echo "DECODE EXIT CODE: $?"
+echo ""
+cat channel-artifacts/rw-gnr_config_block.json | grep -A15 "AnchorPeers"
+'
+```
+
 ### Bugs encountered and fixed during Step 2 (kept here for future organisations following this same path — MC/NB will hit the same issues)
 
 - **Multi-document YAML silently hides content**: an early draft of `configtx.yaml` used `---` document separators between top-level sections (`Organizations`, `Capabilities`, `Application`, `Orderer`, `Channel`, `Profiles`). `configtxgen`'s Viper-based loader only reads the **first** YAML document in a multi-document stream, so everything after the first `---` (including the `Profiles` section itself) was invisible to the tool — surfacing as `Could not find profile: ...` even though the profile was clearly present in the file. **Fix**: the entire file must be a single YAML document; never use `---` separators in `configtx.yaml`.
