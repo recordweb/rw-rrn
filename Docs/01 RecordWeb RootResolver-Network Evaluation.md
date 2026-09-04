@@ -2,21 +2,21 @@
 
 ## Management Summary
 
-This report evaluates the fundamental solution options for the production-ready, global RecordWeb RootResolver network. It refers to the two functionally and technologically neutral requirements documents, RWC #17 (Governance role of the operating organisation) and RWP #24 (Namespace resolution model). The outcome of the evaluation: A **permissioned blockchain architecture** proves to be the most viable fundamental solution, as it is the only category to offer a structural, multi-party tamper-proof model for internationally shared write sovereignty. Within the permissioned blockchain category, a comparison of variants (Hyperledger Fabric, Hyperledger Indy, R3 Corda, permissioned Ethereum/Quorum-Besu) shows that **Hyperledger Fabric** offers the best fit for the global, consistent namespace state described in RWP #24. A concluding chapter evaluates the existing testnet `root-resolver-testnet` against this technology-neutral target vision.
+This report evaluates the fundamental solution options for the production-ready, global RecordWeb RootResolver network. It refers to the two functionally and technologically neutral requirements documents, [RWC #17](https://github.com/recordweb/rwc/issues/17) (Governance role of the operating organisation) and [RWP #24](https://github.com/recordweb/rwp/issues/24) (Namespace resolution model). The outcome of the evaluation: A **permissioned blockchain architecture** proves to be the most viable fundamental solution, as it is the only category to offer a structural, multi-party tamper-proof model for internationally shared write sovereignty. Within the permissioned blockchain category, a comparison of variants (Hyperledger Fabric, Hyperledger Indy, R3 Corda, permissioned Ethereum/Quorum-Besu) shows that **Hyperledger Fabric** offers the best fit for the global, consistent namespace state described in RWP #24. A concluding chapter evaluates the existing testnet `root-resolver-testnet` against this technology-neutral target vision.
 
 ## 1. Starting point: Technology-neutral requirements
 
 ### 1.1 RWC #17 – Governance role, independent of technology
 
-RWC #17 calls for a designated operating organisation for the shared RootResolver network, which is **not** the owner of all namespaces or the operator of all DID resolvers, but which coordinates the integrity, availability and interoperability of the shared infrastructure. The legal form is expressly dependent on implementation and jurisdiction; a non-profit association is mentioned only as one possible model, not as a requirement. The governance framework must, at a minimum, regulate the admission and withdrawal of participants, namespace registration and modification, role and authorisation management, change management, incident handling, auditability and continuity. None of these requirements presupposes a specific technology.
+[RWC #17](https://github.com/recordweb/rwc/issues/17) calls for a designated operating organisation for the shared RootResolver network, which is **not** the owner of all namespaces or the operator of all DID resolvers, but which coordinates the integrity, availability and interoperability of the shared infrastructure. The legal form is expressly dependent on implementation and jurisdiction; a non-profit association is mentioned only as one possible model, not as a requirement. The governance framework must, at a minimum, regulate the admission and withdrawal of participants, namespace registration and modification, role and authorisation management, change management, incident handling, auditability and continuity. None of these requirements presupposes a specific technology.
 
 ### 1.2 RWP #24 – Functional resolution model, independent of technology
 
-RWP #24 describes the RootResolver purely in functional terms as a distributed namespace directory: for a `did:rwp` namespace, it provides only routing information to the relevant DID resolver, but does not store any DID documents, records, record contents, access decisions or organisational directory data. A client must classify the namespace (global vs. local) and must not transmit local namespaces to the global network. A response must identify the namespace and provide the currently valid resolver endpoint; successful namespace resolution does not constitute proof of the DID’s existence or accessibility. This model is also technology-agnostic: it defines input/output and semantics, but not an implementation platform.
+[RWP #24](https://github.com/recordweb/rwp/issues/24) describes the RootResolver purely in functional terms as a distributed namespace directory: for a `did:rwp` namespace, it provides only routing information to the relevant DID resolver, but does not store any DID documents, records, record contents, access decisions or organisational directory data. A client must classify the namespace (global vs. local) and must not transmit local namespaces to the global network. A response must identify the namespace and provide the currently valid resolver endpoint; successful namespace resolution does not constitute proof of the DID’s existence or accessibility. This model is also technology-agnostic: it defines input/output and semantics, but not an implementation platform.
 
 ### 1.3 Derivation of the core requirements for the evaluation
 
-Four technology-neutral core requirements can be derived from #17 and #24, which serve as an evaluation framework for all stages of this report:
+Four technology-neutral core requirements can be derived from #17 and #24, which serve as an evaluation framework for all levels of this report:
 
 - **Federated, shared write control**: Several independent organisations (potentially public authorities from different countries) must be able to jointly maintain namespace routing entries, without a central controlling authority, and without any single party being able to unilaterally alter the register.
 - **Globally consistent read response**: Every requesting party must receive the same routing response for the same namespace at the same time.
@@ -25,18 +25,18 @@ Four technology-neutral core requirements can be derived from #17 and #24, which
 
 In addition, the following framework conditions apply: international sponsorship by public authorities from several countries; national sovereignty regarding data protection and data security despite data exchange; no vendor lock-in; and federation as a central architectural principle.
 
-## Stage 2A: Policy decision on solution architecture (technology-neutral)
+## Level A: Policy decision on solution architecture
 
 ### 2.1 Option A1 – Custom development
 
-A fully in-house developed distributed registry (with its own consensus protocol and API layer) would remain a viable option if only the requirements from #17/#24 were used as the benchmark.
+A fully custom developed distributed registry (with its own consensus protocol and API layer) would remain a viable option if only the requirements from #17/#24 were used as the benchmark.
 
-| SWOT | In-house development (category) |
+| SWOT | Custom development (category) |
 |---|---|
 | Strengths | Precisely tailored to the lean data model from RWP #24 (namespace only → resolver endpoint); no legacy issues from third-party platforms |
 | Weaknesses | Multi-party consensus, protection against manipulation and audit history must be developed from scratch and hardened over several years, even though this is the core of the requirement in #17 |
 | Opportunities | Conceivable as a very lean solution if the number of participants remains small in the long term |
-| Risks | Lack of trust on the part of sovereign states in untested in-house development; dependence on a single development team contradicts the requirement for vendor independence; security risk associated with in-house consensus logic in critical infrastructure |
+| Risks | Lack of trust on the part of sovereign states in untested custom development; dependence on a single development team contradicts the requirement for vendor independence; security risk associated with custom consensus logic in critical infrastructure |
 
 A bespoke solution would, in essence, have to replicate a tamper-proof, multi-party auditable transaction protocol anyway. For an international register critical to sovereignty, reinventing these mechanisms is neither time-efficient nor risk-efficient.
 
@@ -73,7 +73,7 @@ For critical national infrastructure, a public, permissionless chain is virtuall
 
 ### 2.4 Option A4 – Permissioned blockchain
 
-Permissioned DLT platforms (Hyperledger Fabric, R3 Corda, permissioned Ethereum variants) are designed for consortia comprising known, contractually bound organisations.
+Permissioned DLT (Distributed Ledger Technology) platforms (Hyperledger Fabric, R3 Corda, permissioned Ethereum variants) are designed for consortia comprising known, contractually bound organisations.
 
 | SWOT | Permissioned blockchain (category) |
 |---|---|
@@ -82,13 +82,13 @@ Permissioned DLT platforms (Hyperledger Fabric, R3 Corda, permissioned Ethereum 
 | Opportunities | A real, tried-and-tested model for consortia of states already exists (the EU’s EBSI/Europeum-EDIC, a permissioned DLT consortium with decentralised node responsibility among member states and a coordinating EU legal entity that does not own the data) – a direct structural model for the operator role described in RWC #17 |
 | Risks | Coordination efforts increase with the number of participants; governance must be clearly defined at an early stage, otherwise there is a risk of deadlock in majority decisions |
 
-### 2.5 Interim Decision Stage A
+### 2.5 Decision Level A
 
 A comparison with the purely functional requirements from #17 and #24 paints a clear picture: developing a bespoke solution would amount to unnecessarily reinventing the wheel for problems that have already been solved; Non-blockchain federation models (PKI mesh, DNS, GNS) solve related but distinct trust issues and offer no built-in protection against unilateral registry alterations; public blockchains contradict the requirements for sovereignty and accountability.
 
-**Decision Stage A: Permissioned blockchain.** This decision follows from the functional requirements of #17/#24.
+**Decision Level A: Permissioned blockchain.** This decision follows from the functional requirements of #17/#24.
 
-## 3. Level B: Decision on variants within the permissioned blockchain (open)
+## 3. Level B: Decision on variants within the permissioned blockchain
 
 ### 3.1 Hyperledger Fabric
 
@@ -128,7 +128,7 @@ Hyperledger Indy is a permissioned ledger platform developed specifically for de
 | Opportunities | Of interest for future interoperability requirements with existing EVM-based identity/VC infrastructures |
 | Risks | No established reference model for a consortium of states on this scale; EBSI itself does not use the Quorum/Besu core architecture as a key model |
 
-### 3.5 Interim decision, Stage B
+### 3.5 Decision Level B
 
 Corda is ruled out because its transaction-based, non-globally consistent state model conflicts with the requirement in RWP #24 that ‘all parties see the same routing response’. Permissioned Ethereum offers no demonstrable advantage over Fabric for this use case and has fewer relevant reference projects in the public sector. Indy is the closest alternative to Fabric in terms of functionality, as its governance model (“network under a published framework, authorised endorsers”) corresponds almost verbatim to the requirement in RWC #17; however, its weaker generic tooling ecosystem and data modelling, which is primarily tailored to credential/schema data, argue against selecting it for a pure namespace routing register.
 
@@ -144,7 +144,7 @@ Irrespective of the specific platform, the following basic principles for the op
 
 ## 5. Summary: a technology-neutral decision-making cascade
 
-| Stage | Question | Decision | Justification based exclusively on #17/#24 |
+| Level | Question | Decision | Justification based exclusively on #17/#24 |
 |---|---|---|---|
 | A | Custom development / Non-blockchain / Permissioned blockchain / Permissionless blockchain? | **Blockchain, permissioned** | The only category with built-in protection against unilateral manipulation in the case of federated write sovereignty (#17) and globally consistent read responses (#24) |
 | B | Fabric / Indy / Corda / permissioned Ethereum? | **Hyperledger Fabric** (Indy as the closest alternative) | Globally consistent state best aligns with the resolution model from #24; governance flexibility (channels/private data) meets #17 requirements |
@@ -154,9 +154,9 @@ Irrespective of the specific platform, the following basic principles for the op
 
 The `recordweb/root-resolver-testnet` repository implements Hyperledger Fabric 2.5 with a dedicated namespace registry chaincode and is explicitly declared as a learning environment, not for production use. The structure comprises network configuration (`configtx`, `docker-compose`), setup scripts for cryptographic material, channels and network startup, a chaincode folder containing the namespace registry implementation, as well as an admin app and a Recordfinder client. Two test organisations are defined – `RecordWebOrg` and `SwissGovOrg` – alongside a separate `OrdererOrg`.
 
-Measured against the target architecture (Levels A–C) derived in a technology-neutral manner in this report, the test network already **correctly fulfils the fundamental architectural decision**: it is a permissioned blockchain with a multi-party structure, not a centralised database or a public chain, and the chaincode semantics (namespace as state key, resolver endpoint as value) corresponds exactly to the resolution model described in purely functional terms in RWP #24 – even without the implementation having to rely on RWP #25, as the model can already be derived from #24.
+Measured against the target architecture (Levels A–C) derived in a technology-neutral manner in this report, the test network already **correctly fulfils the fundamental architectural decision**: it is a permissioned blockchain with a multi-party structure, not a centralised database or a public chain, and the chaincode semantics (namespace as state key, resolver endpoint as value) corresponds exactly to the resolution model described in purely functional terms in RWP #24.
 
-However, there are significant gaps compared with the fundamental governance principles derived in Section 4, which are already identified in the testnet document `production-track-b.md`:
+However, there are significant gaps compared with the fundamental governance principles derived in Level C, which are already identified in the testnet document `production-track-b.md`:
 
 | Fundamental principle from Level C | Status in the test network | Gap |
 |---|---|---|

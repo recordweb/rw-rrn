@@ -4,27 +4,15 @@ Status: LIVING DOCUMENT — tracks actual progress, decisions-in-execution, and 
 Last updated: 2026-09-03
 
 Companion documents:
-- `RootResolver-Network-Planning.md` — the planning/design document (architecture, governance, rollout plan).
-- `Statuten-RecordWeb-Trust-Association.md` — draft statutes for the operating association.
+- `02 RootResolver-Network Operating Handbook.md` — the operating document (architecture, governance, rollout plan).
+- `03 Statuten-RecordWeb-Trust-Association.md` — draft statutes for the operating association.
 - This document (`Config-and-Progress.md`) — the operational build log: what has actually been done, in what order, with reusable step-by-step instructions.
 
-Working method (agreed): small interactive steps. The assistant proposes a concrete next step; the human executes and confirms (or reports errors) before proceeding. This document is updated only at significant milestones, not after every micro-step, so that work can resume in a fresh chat session without losing context.
+Working method with AI: small interactive steps. The assistant proposes a concrete next step; the human executes and confirms (or reports errors) before proceeding. This document is updated only at significant milestones, not after every micro-step, so that work can resume in a fresh chat session without losing context.
 
 Repository: [recordweb/rwrrn](https://github.com/recordweb/rwrrn) — holds the planning documents, network configuration (`docker-compose.yml`, `configtx.yaml`), the custom tools image (`fabric-tools/`), CA-bootstrap scripts (`scripts/ca-bootstrap/`), and the GitHub Actions deployment workflow (`.github/workflows/deploy.yml`).
 
----
 
-## Stage Numbering (current, authoritative)
-
-1. **Stage 1 — TWS only**: TWS stands up its own Fabric CA, 4 orderers, 2 peers. Single-org test network.
-2. **Stage 2 — + Association bootstrap/discovery node**: the RecordWeb Trust Association stands up its own minimal organisation (1 CA + 1 non-endorsing peer, `peer.recordweb.org`) as the network's stable anchor peer.
-3. **Stage 3 — + MC, + NB**: Melvin Carvalho's and Nicolas Bürkler's organisations join, each with the same node layout as TWS.
-4. **Stage 4 — + Authorities**: real governmental / government-delegated organisations join.
-5. **Stage 5 — − TWS, − MC, − NB**: pilot organisations withdraw once no non-governmental organisation remains; test phase ends; production channel unlocks.
-
-`RootResolver-Network-Planning.md` Section 7 should be renumbered to match, and its "2 orderers per org" figure updated to 4 (see Decision Log below), at the next significant update of that document.
-
----
 
 ## Decision Log (2026-09-02 / 2026-09-03)
 
@@ -32,16 +20,10 @@ These decisions supersede anything stated differently in `RootResolver-Network-P
 
 | # | Decision | Rationale |
 |---|----------|-----------|
-| D1 | Peer-org MSP: `TWSOrgMSP`. Orderer-org MSP: `TWSOrdererMSP` (own dedicated orderer MSP per organisation — "Model B"), not a single shared `OrdererMSP` across all orgs. | Each organisation runs its own Fabric CA and issues all its own identities (Planning doc Section 4.6). A shared `OrdererMSP` would imply a shared orderer-org CA across TWS/MC/NB, which contradicts the "each org has its own CA" principle. |
-| D2 | Fabric version: **3.1.x** (not 2.5 LTS), with images pinned to `hyperledger/fabric-orderer:3.1`, `hyperledger/fabric-peer:3.1`. | Adopted before any channel exists, avoiding a later migration. Note: v2.5.x remains Fabric's officially declared LTS line as of this writing; v3.1.x is actively maintained but not (yet) LTS-labelled. Accepted trade-off in exchange for SmartBFT and a currently-maintained codebase. |
-| D3 | Consensus: **SmartBFT** (Byzantine Fault Tolerant), not Raft. | SmartBFT requires a minimum of 4 consenters (formula `3F+1`, F=1) to tolerate even one faulty/malicious orderer. With only 2 orderers, BFT provides zero fault tolerance. TWS's orderer count was therefore raised from 2 to 4 to make BFT viable from Stage 1 onward — see D4. Actual `OrdererType: BFT` activation happens at channel-creation time (configtx), not in docker-compose. |
-| D4 | TWS orderer count: **4** (`orderer0`-`orderer3`), not 2. Peer count unchanged at 2 (`peer0`/`peer1`). | Direct consequence of D3. SmartBFT's minimum-node requirement applies to orderers only, not peers. `RootResolver-Network-Planning.md` Section 3.1's "2 orderers per org" figure is superseded for TWS; whether this also applies to MC/NB is an open item for Stage 3. |
-| D5 | Orderer port scheme: flat **+100 offset per orderer** from `orderer0`, replacing the earlier ad-hoc +1000/+3 scheme. | Simpler, predictable, easy to extend to further orderers. See updated Step 1.2 table below. **Breaking change**: `orderer1` moved from 8050/8053/9446 to 7150/7153/9543 — firewall rules must be updated. |
-| D6 | `hyperledger/fabric-tools` Docker image is **not used**. A custom image `rwrrn-fabric-tools` is built from `fabric-tools/Dockerfile.tools` (via `docker compose build`, automatic on `docker compose up -d`). | Hyperledger confirmed (github.com/hyperledger/fabric issue #5178) that no `fabric-tools` image has been published since Fabric v3.0; the recommended path is to build your own from the official release binaries. The custom image bundles Fabric client binaries (peer, configtxgen, configtxlator, cryptogen, osnadmin) AND `fabric-ca-client` in one image, so it also serves as the CA administration tool (see D7). |
-| D7 | All CA administration (enroll/register operations) runs from the `cli` service (image `rwrrn-fabric-tools`), not from inside the `ca.tws...` server container. | Cleaner separation of concerns: the CA container stays a pure server; all client-side operations happen from one dedicated admin-tools container. This was an interim workaround (running `fabric-ca-client` inside the CA container) during initial bootstrap, now retired. |
-| D8 | Crypto material is generated via a **live Fabric CA server**, not `cryptogen`. | Required for a network that must support ongoing identity issuance as new node types/operators are added (see `RootResolver-Network-Planning.md` Section 4.6). `cryptogen` only supports a one-time, static crypto-material generation and is unsuitable beyond throwaway test networks. |
-| D9 | Test-channel name: **`root-resolver-test`**, distinct from the eventual production channel name `root-resolver` (reused from the existing `root-resolver-testnet` repo's channel naming). | Keeps the Stage 1 SmartBFT test channel unambiguous and clearly disposable, while signalling its relationship to the eventual production channel. Channel name is valid per Fabric's naming rule (`[a-z][a-z0-9.-]*`, max 249 chars). |
-| D10 | Channel capability ceilings differ **per capability group** in Fabric 3.1.5: `Channel` tops out at `V3_0`, but `Orderer` tops out at `V2_0` and `Application` tops out at `V2_5`. There is no `OrdererV3_0` or `ApplicationV3_0` constant in Fabric's source (`common/capabilities/*.go`). | Confirmed by direct source inspection on 2026-09-03 after both were tried and rejected at runtime (see Bugs Encountered, Step 2). BFT itself is activated via `OrdererType: BFT` + `ConsenterMapping`, not via any Orderer/Application capability flag — only the **Channel** capability needs to be `V3_0` for BFT, per the official BFT configuration doc. |
+| D1 | All CA administration (enroll/register operations) runs from the `cli` service (image `rwrrn-fabric-tools`), not from inside the `ca.tws...` server container. | Cleaner separation of concerns: the CA container stays a pure server; all client-side operations happen from one dedicated admin-tools container. This was an interim workaround (running `fabric-ca-client` inside the CA container) during initial bootstrap, now retired. |
+| D2 | Crypto material is generated via a **live Fabric CA server**, not `cryptogen`. | Required for a network that must support ongoing identity issuance as new node types/operators are added (see `RootResolver-Network-Planning.md` Section 4.6). `cryptogen` only supports a one-time, static crypto-material generation and is unsuitable beyond throwaway test networks. |
+| D3 | Test-channel name: **`root-resolver-test`**, distinct from the eventual production channel name `root-resolver` (reused from the existing `root-resolver-testnet` repo's channel naming). | Keeps the Stage 1 SmartBFT test channel unambiguous and clearly disposable, while signalling its relationship to the eventual production channel. Channel name is valid per Fabric's naming rule (`[a-z][a-z0-9.-]*`, max 249 chars). |
+| D4 | Channel capability ceilings differ **per capability group** in Fabric 3.1.5: `Channel` tops out at `V3_0`, but `Orderer` tops out at `V2_0` and `Application` tops out at `V2_5`. There is no `OrdererV3_0` or `ApplicationV3_0` constant in Fabric's source (`common/capabilities/*.go`). | Confirmed by direct source inspection on 2026-09-03 after both were tried and rejected at runtime (see Bugs Encountered, Step 2). BFT itself is activated via `OrdererType: BFT` + `ConsenterMapping`, not via any Orderer/Application capability flag — only the **Channel** capability needs to be `V3_0` for BFT, per the official BFT configuration doc. |
 
 ---
 
@@ -66,9 +48,11 @@ rwrrn/
 │   ├── 05-provision-org-msp-cacerts.sh   # Populates ORG-level msp/cacerts/ + msp/tlscacerts/ + config.yaml (required for configtxgen AND orderer cluster TLS trust — see Step 2 below)
 │   └── 06-rotate-bootstrap-admin.sh   # Rotates/retires the CA bootstrap admin (admin:adminpw) — DONE, see Bootstrap Admin Rotation section
 └── Docs/
-    ├── Config-and-Progress.md         # This file
-    ├── RootResolver-Network-Planning.md
-    └── Statuten-RecordWeb-Trust-Association.md
+    ├── 01 RecordWeb RootResolver-Network Evaluation
+    ├── 02 RootResolver-Network Operating Handbook
+    ├── 03 Statuten-RecordWeb-Trust-Association
+    ├── 04 How-to-Join-RWRRN-Channel.md
+    └── Config-and-Progress.md         # This file
 ```
 
 ---
@@ -84,19 +68,13 @@ rwrrn/
 | `03-register-enroll-nodes.sh` | Inside `cli` container | same pattern, script `03-...` | Yes — skips per-node/per-cert-type if all 3 files (server.crt/server.key/ca.crt or msp/signcerts) already exist |
 | `04-copy-admincerts-to-nodes.sh` | Directly on VPS host (needs `sudo` — crypto-config files are root-owned) | `cd /opt/rwrrn && sudo bash scripts/ca-bootstrap/04-copy-admincerts-to-nodes.sh` | Yes — skips per-node if admincert already present |
 | `05-provision-org-msp-cacerts.sh` | Inside `cli` container | same pattern, script `05-...` | Yes — skips cacerts/tlscacerts/config.yaml individually if already present |
-| `06-rotate-bootstrap-admin.sh` | Inside `cli` container | same pattern, script `06-...` | Yes — see Bootstrap Admin Rotation section; **DONE, executed 2026-09-03** |
+| `06-rotate-bootstrap-admin.sh` | Inside `cli` container | same pattern, script `06-...` | Yes — see Bootstrap Admin Rotation section |
 
 **Required order**: 01 → 02 → 03 → 04 → 05 → 06, in this sequence for a first-time bootstrap. 05 must run, and its resulting org-level `msp/cacerts/` + `msp/tlscacerts/` must be in place, **before** `configtxgen` generates any genesis/channel block that will actually be distributed to orderers (see Step 2, Bugs Encountered — a block generated before 05's `tlscacerts/` fix had to be discarded and regenerated).
 
 **After running 03 + 04 for any new/changed node**: start that one node with `docker compose up -d <service>` and check `docker compose logs <service> --tail=30` before starting the next one. Never start all nodes at once after a crypto-material change — this keeps failures isolated to one node at a time.
 
----
 
-## Reference: Existing `root-resolver-testnet` Setup (reviewed 2026-09-02)
-
-The existing `recordweb/root-resolver-testnet` repository (Fabric 2.5 LTS, confirmed running on `vps.recordweb.dev`) uses 2 organisations (`RecordWebOrg`, `SwissGovOrg`), 1 single-node Raft orderer, 1 peer per org, and a `cli` (fabric-tools) container plus application-layer services. This was the baseline the Stage 1 TWS setup adapted from — see the RWRRN docker-compose.yml history for the concrete divergences (own CA, 4 orderers instead of 1, Fabric 3.1 instead of 2.5).
-
----
 
 ## Stage 1 — TWS Only
 
@@ -105,8 +83,6 @@ The existing `recordweb/root-resolver-testnet` repository (Fabric 2.5 LTS, confi
 Stand up a single-organisation Fabric test network for TWS: 1 CA, 4 orderers (SmartBFT-ready), 2 peers, reachable under the `tws.rwrrn.recordweb.dev` hostnames, as a foundation to validate chaincode logic and operational scripts end-to-end before any other organisation joins.
 
 ### Step 1.1 — DNS Records for TWS Nodes (DONE — 2026-09-02)
-
-**Status: COMPLETE AND VERIFIED.**
 
 DNS `A` records in Cloudflare for the `recordweb.dev` zone, all **DNS only** (grey cloud, not proxied) — required because Fabric nodes communicate via gRPC/mTLS directly, which does not work through Cloudflare's HTTP(S) reverse proxy.
 
@@ -122,7 +98,7 @@ DNS `A` records in Cloudflare for the `recordweb.dev` zone, all **DNS only** (gr
 
 **How-to (reusable for Stage 2/3):** Cloudflare dashboard → zone → DNS > Records → Add record → Type `A`, Proxy status = DNS only, TTL Auto. Verify with `dig <hostname> +short`.
 
-### Step 1.2 — Port Scheme (UPDATED — 2026-09-03, see Decision D5)
+### Step 1.2 — Port Scheme (DONE — 2026-09-03)
 
 Flat +100 offset per orderer from `orderer0`. Admin port = general port + 3. Operations port sequential from 9443.
 
@@ -136,9 +112,7 @@ Flat +100 offset per orderer from `orderer0`. Admin port = general port + 3. Ope
 | Peer 0 | `peer0.tws.rwrrn.recordweb.dev` | 7051 | 7052 | 9444 |
 | Peer 1 | `peer1.tws.rwrrn.recordweb.dev` | 8051 | 8052 | 9445 |
 
-**Superseded**: the original plan had only `orderer0`/`orderer1` on 7050/8050. `orderer1` moved to 7150 as part of the 4-orderer/SmartBFT expansion — update any firewall rules referencing the old 8050-8053/9446 range.
-
-### Step 1.3 — Firewall / Open Ports (UPDATED)
+### Step 1.3 — Firewall / Open Ports (DONE — 2026-09-02/03)
 
 Inbound ports needed on the TWS VPS: **7050-7054, 7150-7153, 7250-7253, 7350-7353**, plus operations ports **9443, 9543, 9643, 9743, 9444, 9445** if external monitoring access is desired (otherwise internal-only is sufficient).
 
@@ -180,23 +154,11 @@ The Fabric CA was originally started with a hardcoded bootstrap identity, `admin
 
 The bootstrap admin's secret has been rotated to a new, strong, non-default value (recorded outside this repository, per `.env` conventions — never committed). `tws-org-admin`/`tws-orderer-admin` continue to register new identities independently, unaffected by the rotation.
 
----
 
-## Stage 2 — Association Bootstrap/Discovery Node (NOT STARTED)
-
-Planned scope (see `RootResolver-Network-Planning.md` Section 3.6): 1 Fabric CA + 1 non-endorsing peer for the RecordWeb Trust Association, hostname `peer.recordweb.org`, joined to channels purely for gossip-based discovery, never as a required endorser, no orderer.
-
----
-
-## Stage 3 — MC, NB Join (NOT STARTED)
-
-Blocked on: MC and NB infrastructure clarification (parked per `RootResolver-Network-Planning.md` Section 8). Open question carried forward: should MC/NB also run 4 orderers each (matching TWS's SmartBFT-driven expansion), or does the BFT consenter-count requirement only need to be satisfied network-wide rather than per-organisation? To be resolved before Stage 3 begins.
-
----
 
 ## Stage 1 — Step 2: Channel Bootstrap (SmartBFT) — DONE (2026-09-03)
 
-**Status: COMPLETE AND VERIFIED.** The application channel `root-resolver-test` (see Decision D9 for naming) is live across all 6 TWS nodes: orderer0-orderer3 (all `status: active`, SmartBFT cluster communicating with all 4 subchannels `READY`, view-leader elected) and peer0/peer1 (both joined, both report identical `height:1` / `currentBlockHash`, matching AnchorPeer configuration verified in the live channel config).
+**Status: COMPLETE AND VERIFIED.** The application channel `root-resolver-test` (see Decision D3 for naming) is live across all 6 TWS nodes: orderer0-orderer3 (all `status: active`, SmartBFT cluster communicating with all 4 subchannels `READY`, view-leader elected) and peer0/peer1 (both joined, both report identical `height:1` / `currentBlockHash`, matching AnchorPeer configuration verified in the live channel config).
 
 ### What was built, in order
 
@@ -219,25 +181,3 @@ Blocked on: MC and NB infrastructure clarification (parked per `RootResolver-Net
 - **`Application.Capabilities: V3_0` does not exist either — same mistake, different capability group**: after fixing the Orderer capability and successfully rejoining all 4 orderers, `peer channel join` failed with `Application capability V3_0 is required but not supported`. Root cause, confirmed the same way (`common/capabilities/application.go`): the highest defined Application-capability constant is `ApplicationV2_5` — there is no `ApplicationV3_0`. **Fix**: set `Application.Capabilities: V2_5`. This required a second full channel remove/regenerate/rejoin cycle (see Decision D10 for the generalised rule this produced).
 - **Relative crypto-material paths fail for any peer other than the `cli` container's configured default (`peer0`)**: commands like `peer channel join` or `peer channel fetch config` work with **relative** paths (e.g. `crypto/peerOrganizations/.../ca.crt`) only when using the `cli` service's built-in default `CORE_PEER_*` environment (which points at `peer0`, using **absolute** paths baked into `docker-compose.yml`). As soon as any command overrides `CORE_PEER_ADDRESS`/`CORE_PEER_TLS_*` to target `peer1` (or fetches from an orderer) using a **relative** path for the TLS file, it fails with `open /etc/hyperledger/fabric/crypto/...: no such file or directory` — a different, wrong base directory is used for relative-path resolution in that code path. **Fix**: always use the **full absolute path** (`/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/...`) for any `CORE_PEER_TLS_*`/`--cafile`/`--client-cert`/`--client-key` argument passed as an override inside the `cli` container — never rely on relative paths outside of the container's own baked-in defaults.
 
----
-
-## Open Items Carried Forward
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | Bootstrap admin (`admin:adminpw`) rotation/retirement | **DONE — 2026-09-03**, see Bootstrap Admin Rotation section |
-| 2 | Channel bootstrap (genesis block, `OrdererType: BFT`, `ConsenterMapping` for all 4 orderers, channel creation, peer join) | **DONE — 2026-09-03**, see Stage 1 Step 2 section |
-| 3 | Confirm whether `root-resolver-testnet` and the new Stage 1 TWS network run simultaneously on the same VPS; resolve any operations-port collision risk | Open |
-| 4 | Reconcile `recordweb.org` already used by the existing testnet's `RecordWebOrg` peer org vs. the plan to register `recordweb.org` for the association (Stage 2) | Open |
-| 5 | Whether MC/NB also need 4 orderers each for Stage 3 (see Stage 3 section above) | Open |
-| 6 | IPv6 (AAAA) records for TWS nodes | Deferred, not urgent |
-| 7 | MC / NB infrastructure | Parked |
-| 8 | Chaincode-specific endorsement policy (lifecycle `--signature-policy`) | Deferred to a future chaincode-focused session |
-
----
-
-## Changelog
-
-- 2026-09-02: Document created. Stage numbering, DNS records (Step 1.1), port scheme v1 (Step 1.2, 2 orderers), CA-vs-cryptogen decision pending.
-- 2026-09-03: Stage 1 Step 1.4 completed — full crypto-material bootstrap (CA TLS fix, bootstrap admin, two named org admins under Model B MSP split, all node identities, admincerts). Fabric version decision changed from 2.5 LTS to 3.1.x. Consensus decision changed from Raft to SmartBFT, requiring TWS's orderer count to increase from 2 to 4. Port scheme revised (Step 1.2) to a flat +100-per-orderer offset, superseding the original 2-orderer scheme. Custom `rwrrn-fabric-tools` image built to replace the discontinued `hyperledger/fabric-tools` Docker Hub image and to consolidate all CA-client/channel-bootstrap tooling in one place. All 8 services (CA, orderer0-3, peer0-1, cli) confirmed running stably on Fabric 3.1.5. Documented all bugs encountered during this build for reuse by MC/NB. Flagged bootstrap-admin rotation as an open item with rationale. Channel bootstrap (BFT `configtx`, genesis block, channel creation) identified as the next major step.
-- 2026-09-03 (later): Stage 1 Step 2 (Channel Bootstrap, SmartBFT) completed and verified — `configtx.yaml` created and iterated through 5 real bugs (multi-document YAML, global vs. per-org orderer endpoints, obsolete `Consortiums`, missing org-level `cacerts/`, missing org-level `tlscacerts/`, non-existent `OrdererV3_0`/`ApplicationV3_0` capabilities), each documented above for MC/NB. New script `05-provision-org-msp-cacerts.sh` added to the bootstrap sequence. Channel `root-resolver-test` live across all 4 orderers (SmartBFT cluster confirmed communicating) and both peers (joined, synced, AnchorPeer verified). Bootstrap admin rotation (`06-rotate-bootstrap-admin.sh`) executed and marked done. Decision D9 (test channel name) and D10 (capability ceilings per group) added. Chaincode-specific endorsement policy deferred to a future session.
