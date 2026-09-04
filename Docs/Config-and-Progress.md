@@ -203,7 +203,6 @@ done
 
 ``` bash
 docker compose exec cli bash -c '
-rm -f channel-artifacts/root-resolver-test.block
 FABRIC_CFG_PATH=/opt/gopath/src/github.com/hyperledger/fabric/peer \
 configtxgen -profile RwGnrApplicationGenesis \
   -channelID rw-gnr \
