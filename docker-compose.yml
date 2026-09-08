@@ -391,8 +391,8 @@ services:
     container_name: ccaas-gnr-test
     environment:
       - CHAINCODE_SERVER_ADDRESS=0.0.0.0:9999
-      - CHAINCODE_ID=gnr-test_1.0:<PACKAGE_ID_WIRD_IN_SCHRITT_4_ERMITTELT>
-      - CORE_CHAINCODE_ID_NAME=gnr-test_1.0:<PACKAGE_ID_WIRD_IN_SCHRITT_4_ERMITTELT>
+      - CHAINCODE_ID=gnr-test_1.0:69bb23fbaa8e9ceddd312fd5acbb9ef448302907cf72328ebe0fe7e9f23afe26
+      - CORE_CHAINCODE_ID_NAME=gnr-test_1.0:69bb23fbaa8e9ceddd312fd5acbb9ef448302907cf72328ebe0fe7e9f23afe26
     networks:
-      - rwrrn_net
+      - <dasselbe_netzwerk_wie_peer0_peer1>
     restart: unless-stopped
