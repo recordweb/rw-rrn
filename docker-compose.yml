@@ -394,5 +394,5 @@ services:
       - CHAINCODE_ID=gnr-test_1.0:69bb23fbaa8e9ceddd312fd5acbb9ef448302907cf72328ebe0fe7e9f23afe26
       - CORE_CHAINCODE_ID_NAME=gnr-test_1.0:69bb23fbaa8e9ceddd312fd5acbb9ef448302907cf72328ebe0fe7e9f23afe26
     networks:
-      - <dasselbe_netzwerk_wie_peer0_peer1>
+      - rwrrn_net
     restart: unless-stopped
