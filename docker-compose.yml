@@ -402,8 +402,8 @@ services:
     container_name: ccaas-rw-cc-gnr
     environment:
       - CHAINCODE_SERVER_ADDRESS=0.0.0.0:9999
-      - CHAINCODE_ID=rw-cc-gnr_1.0:b48df1d7bf682c6fe6ed6e912f139e76ed879c98d5dcbe648991ceb9f2d89ea8
-      - CORE_CHAINCODE_ID_NAME=rw-cc-gnr_1.0:b48df1d7bf682c6fe6ed6e912f139e76ed879c98d5dcbe648991ceb9f2d89ea8
+      - CHAINCODE_ID=rw-cc-gnr_1.0:3cdd667f0ad0cbf2f998380db11f217595bde20bc23c3c0480983d2cf93436ee
+      - CORE_CHAINCODE_ID_NAME=rw-cc-gnr_1.0:3cdd667f0ad0cbf2f998380db11f217595bde20bc23c3c0480983d2cf93436ee
     networks:
       - rwrrn_net
     restart: unless-stopped    
