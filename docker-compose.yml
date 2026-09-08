@@ -384,3 +384,15 @@ services:
       - orderer1.tws.rwrrn.recordweb.dev
       - orderer2.tws.rwrrn.recordweb.dev
       - orderer3.tws.rwrrn.recordweb.dev
+
+  # ── CCaaS  ────────────────────────────────────────────────────
+  ccaas-gnr-test:
+    image: rw-cc-gnr:1.0
+    container_name: ccaas-gnr-test
+    environment:
+      - CHAINCODE_SERVER_ADDRESS=0.0.0.0:9999
+      - CHAINCODE_ID=gnr-test_1.0:<PACKAGE_ID_WIRD_IN_SCHRITT_4_ERMITTELT>
+      - CORE_CHAINCODE_ID_NAME=gnr-test_1.0:<PACKAGE_ID_WIRD_IN_SCHRITT_4_ERMITTELT>
+    networks:
+      - rwrrn_net
+    restart: unless-stopped
