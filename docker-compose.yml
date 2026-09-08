@@ -386,13 +386,24 @@ services:
       - orderer3.tws.rwrrn.recordweb.dev
 
   # ── CCaaS  ────────────────────────────────────────────────────
-  ccaas-gnr-test:
+  ccaas-rw-cc-gnr-test:
     image: rw-cc-gnr:1.0
-    container_name: ccaas-gnr-test
+    container_name: ccaas-rw-cc-gnr-test
     environment:
       - CHAINCODE_SERVER_ADDRESS=0.0.0.0:9999
-      - CHAINCODE_ID=gnr-test_1.0:69bb23fbaa8e9ceddd312fd5acbb9ef448302907cf72328ebe0fe7e9f23afe26
-      - CORE_CHAINCODE_ID_NAME=gnr-test_1.0:69bb23fbaa8e9ceddd312fd5acbb9ef448302907cf72328ebe0fe7e9f23afe26
+      - CHAINCODE_ID=rw-cc-gnr-test_1.0:69bb23fbaa8e9ceddd312fd5acbb9ef448302907cf72328ebe0fe7e9f23afe26
+      - CORE_CHAINCODE_ID_NAME=rw-cc-gnr-test_1.0:69bb23fbaa8e9ceddd312fd5acbb9ef448302907cf72328ebe0fe7e9f23afe26
     networks:
       - rwrrn_net
     restart: unless-stopped
+
+  ccaas-rw-cc-gnr:
+    image: rw-cc-gnr:1.0
+    container_name: ccaas-rw-cc-gnr
+    environment:
+      - CHAINCODE_SERVER_ADDRESS=0.0.0.0:9999
+      - CHAINCODE_ID=rw-cc-gnr_1.0:69bb23fbaa8e9ceddd312fd5acbb9ef448302907cf72328ebe0fe7e9f23afe26
+      - CORE_CHAINCODE_ID_NAME=rw-cc-gnr_1.0:69bb23fbaa8e9ceddd312fd5acbb9ef448302907cf72328ebe0fe7e9f23afe26
+    networks:
+      - rwrrn_net
+    restart: unless-stopped    
